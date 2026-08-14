@@ -191,20 +191,25 @@ fun DocumentListScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("📄", style = MaterialTheme.typography.displayLarge)
-                        Spacer(modifier = Modifier.height(16.dp))
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(32.dp)
+                    ) {
+                        com.example.docscanner.ui.components.DocScannerBrandLogo(size = 96.dp)
+                        Spacer(modifier = Modifier.height(20.dp))
                         Text(
                             text = if (searchQuery.isNotBlank()) "No results for \"$searchQuery\""
-                                   else "No documents yet",
-                            style = MaterialTheme.typography.headlineSmall
+                                   else "DocScanner Offline AI",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = if (searchQuery.isBlank()) "Tap + to scan your first document"
-                                   else "Try a different search term",
+                            text = if (searchQuery.isBlank()) "Tap + to scan your first document with AI edge detection"
+                                   else "Try a different search keyword",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
                     }
                 }
