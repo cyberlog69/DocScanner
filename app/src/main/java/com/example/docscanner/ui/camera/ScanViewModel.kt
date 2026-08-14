@@ -1,0 +1,138 @@
+package com.example.docscanner.ui.camera
+
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.docscanner.data.model.Document
+import com.example.docscanner.data.model.DocumentCategory
+import com.example.docscanner.data.model.Page
+import com.example.docscanner.data.repository.DocumentRepository
+import com.example.docscanner.service.FileStorageService
+import com.example.docscanner.service.OcrService
+import com.example.docscanner.service.PageData
+import com.example.docscanner.service.PdfGenerator
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import java.util.UUID
+
+class ScanViewModel(
+    private val repository: DocumentRepository,
+    private val ocrService: OcrService,
+    private val fileStorageService: FileStorageService,
+    private val pdfGenerator: PdfGenerator
+) : ViewModel() {
+
+    private val _state = MutableStateFlow(ScanState())
+    val state: StateFlow<ScanState> = _state.asStateFlow()
+
+    /** Called when ML Kit Document Scanner returns page URIs */
+    fun onScanComplete(pageUris: List<Uri>, existingDocumentId: String? = null) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _state.update { it.copy(isProcessing = true, processingStep = "Loading images...") }
+
+            try {
+                val documentId = existingDocumentId ?: UUID.randomUUID().toString()
+                val bitmaps = pageUris.mapNotNull { uri ->
+                    uri.path?.let { BitmapFactory.decodeFile(it) }
+                }
+
+                if (bitmaps.isEmpty()) {
+                    _state.update { it.copy(isProcessing = false, error = "No pages found") }
+                    return@launch
+                }
+
+                // Save first page as document thumbnail
+                val thumbnailPath = fileStorageService.saveThumbnail(bitmaps.first(), documentId)
+
+                // Save all page images
+                val imagePaths = bitmaps.mapIndexed { index, bitmap ->
+                    fileStorageService.savePageImage(bitmap, documentId, index)
+                }
+
+                // Run OCR on each page
+                _state.update { it.copy(processingStep = "Running OCR...") }
+                val ocrResults = bitmaps.map { bitmap ->
+                    ocrService.recognizeText(bitmap)
+                }
+
+                val fullText = ocrResults.joinToString("\n\n--- Page Break ---\n\n") { it.fullText }
+
+                // Generate PDF
+                _state.update { it.copy(processingStep = "Generating PDF...") }
+                val pageDataList = bitmaps.mapIndexed { i, bitmap ->
+                    PageData(bitmap = bitmap, extractedText = ocrResults[i].fullText)
+                }
+                val pdfBytes = pdfGenerator.generatePdf(
+                    pages = pageDataList,
+                    title = "Scanned Document"
+                )
+                val pdfPath = fileStorageService.savePdf(pdfBytes, documentId)
+
+                // Create or update Room document
+                val document = Document(
+                    id = documentId,
+                    title = generateTitle(ocrResults.firstOrNull()?.fullText),
+                    category = DocumentCategory.OTHER,
+                    pageCount = bitmaps.size,
+                    thumbnailPath = thumbnailPath,
+                    pdfPath = pdfPath,
+                    extractedText = fullText
+                )
+                repository.saveDocument(document)
+
+                // Save pages
+                val pages = imagePaths.mapIndexed { index, path ->
+                    Page(
+                        id = UUID.randomUUID().toString(),
+                        documentId = documentId,
+                        pageIndex = index,
+                        imagePath = path,
+                        originalImagePath = path,
+                        extractedText = ocrResults.getOrNull(index)?.fullText ?: ""
+                    )
+                }
+                repository.savePages(pages)
+
+                // Recycle bitmaps
+                bitmaps.forEach { it.recycle() }
+
+                _state.update {
+                    it.copy(
+                        isProcessing = false,
+                        savedDocumentId = documentId,
+                        ocrPreviewText = ocrResults.firstOrNull()?.fullText ?: ""
+                    )
+                }
+
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(isProcessing = false, error = e.message ?: "Scan failed")
+                }
+            }
+        }
+    }
+
+    private fun generateTitle(text: String?): String {
+        if (text.isNullOrBlank()) return "Document ${System.currentTimeMillis() / 1000}"
+        // Use first non-empty line as title, max 40 chars
+        val firstLine = text.lines().firstOrNull { it.isNotBlank() } ?: "Document"
+        return firstLine.take(40).trim()
+    }
+
+    fun clearError() = _state.update { it.copy(error = null) }
+    fun resetState() = _state.update { ScanState() }
+}
+
+data class ScanState(
+    val isProcessing: Boolean = false,
+    val processingStep: String = "",
+    val savedDocumentId: String? = null,
+    val ocrPreviewText: String = "",
+    val error: String? = null
+)
