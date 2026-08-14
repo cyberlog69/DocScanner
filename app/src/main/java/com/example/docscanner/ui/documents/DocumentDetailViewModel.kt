@@ -6,17 +6,24 @@ import androidx.lifecycle.viewModelScope
 import com.example.docscanner.data.model.Document
 import com.example.docscanner.data.model.DocumentCategory
 import com.example.docscanner.data.model.Page
+import com.example.docscanner.data.pref.PdfQuality
 import com.example.docscanner.data.repository.DocumentRepository
 import com.example.docscanner.service.FileStorageService
+import com.example.docscanner.service.PageData
+import com.example.docscanner.service.PdfGenerator
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 class DocumentDetailViewModel(
     private val repository: DocumentRepository,
     private val fileStorageService: FileStorageService,
+    private val pdfGenerator: PdfGenerator,
     private val documentId: String
 ) : ViewModel() {
 
@@ -59,15 +66,59 @@ class DocumentDetailViewModel(
         }
     }
 
+    /**
+     * Generates or re-exports the document PDF with the selected [PdfQuality].
+     * Invokes [onReady] with the generated PDF [File].
+     */
+    fun exportPdfWithQuality(quality: PdfQuality, onReady: (File) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val doc = _state.value.document ?: return@launch
+            val pages = _state.value.pages
+
+            _state.update { it.copy(isExporting = true, exportProgressText = "Rendering ${quality.badge} PDF...") }
+
+            try {
+                val pageDataList = pages.mapNotNull { page ->
+                    val bitmap = fileStorageService.loadBitmap(page.imagePath)
+                    bitmap?.let { PageData(bitmap = it, extractedText = page.extractedText) }
+                }
+
+                if (pageDataList.isNotEmpty()) {
+                    val pdfBytes = pdfGenerator.generatePdf(
+                        pages = pageDataList,
+                        title = doc.title,
+                        quality = quality
+                    )
+                    val fileName = "doc_${doc.id}_${quality.name.lowercase()}.pdf"
+                    val pdfPath = fileStorageService.savePdf(pdfBytes, doc.id, fileName = fileName)
+                    val pdfFile = fileStorageService.getPdfFile(pdfPath)
+
+                    pageDataList.forEach { it.bitmap.recycle() }
+
+                    _state.update { it.copy(isExporting = false) }
+
+                    if (pdfFile != null) {
+                        withContext(Dispatchers.Main) {
+                            onReady(pdfFile)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(isExporting = false, exportError = e.message) }
+            }
+        }
+    }
+
     companion object {
         fun provideFactory(
             repository: DocumentRepository,
             fileStorageService: FileStorageService,
+            pdfGenerator: PdfGenerator,
             documentId: String
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                return DocumentDetailViewModel(repository, fileStorageService, documentId) as T
+                return DocumentDetailViewModel(repository, fileStorageService, pdfGenerator, documentId) as T
             }
         }
     }
@@ -76,5 +127,8 @@ class DocumentDetailViewModel(
 data class DocumentDetailState(
     val document: Document? = null,
     val pages: List<Page> = emptyList(),
-    val currentPageIndex: Int = 0
+    val currentPageIndex: Int = 0,
+    val isExporting: Boolean = false,
+    val exportProgressText: String = "",
+    val exportError: String? = null
 )

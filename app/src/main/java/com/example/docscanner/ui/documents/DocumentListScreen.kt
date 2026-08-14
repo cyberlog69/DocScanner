@@ -38,6 +38,9 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import com.example.docscanner.data.pref.ScannerPreferences
+import com.example.docscanner.ui.settings.SettingsDialog
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -85,13 +88,15 @@ import java.util.Locale
 fun DocumentListScreen(
     onNavigateToDocument: (String) -> Unit,
     onStartScan: () -> Unit,
-    viewModel: DocumentListViewModel
+    viewModel: DocumentListViewModel,
+    preferences: ScannerPreferences
 ) {
     val documents by viewModel.documents.collectAsStateWithLifecycle()
     val selectedCategory by viewModel.selectedCategory.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val isGridView by viewModel.isGridView.collectAsStateWithLifecycle()
 
+    var showSettingsDialog by remember { mutableStateOf(false) }
     var documentToDelete by remember { mutableStateOf<Document?>(null) }
     var documentToRename by remember { mutableStateOf<Document?>(null) }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
@@ -106,6 +111,12 @@ fun DocumentListScreen(
                         Icon(
                             imageVector = if (isGridView) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
                             contentDescription = if (isGridView) "List view" else "Grid view"
+                        )
+                    }
+                    IconButton(onClick = { showSettingsDialog = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Settings"
                         )
                     }
                 },
@@ -231,6 +242,13 @@ fun DocumentListScreen(
                 }
             }
         }
+    }
+
+    if (showSettingsDialog) {
+        SettingsDialog(
+            preferences = preferences,
+            onDismiss = { showSettingsDialog = false }
+        )
     }
 
     // Delete dialog

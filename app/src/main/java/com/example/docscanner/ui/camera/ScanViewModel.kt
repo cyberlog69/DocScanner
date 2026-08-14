@@ -8,6 +8,8 @@ import androidx.lifecycle.viewModelScope
 import com.example.docscanner.data.model.Document
 import com.example.docscanner.data.model.DocumentCategory
 import com.example.docscanner.data.model.Page
+import com.example.docscanner.data.pref.CameraQuality
+import com.example.docscanner.data.pref.ScannerPreferences
 import com.example.docscanner.data.repository.DocumentRepository
 import com.example.docscanner.service.FileStorageService
 import com.example.docscanner.service.OcrService
@@ -25,7 +27,8 @@ class ScanViewModel(
     private val repository: DocumentRepository,
     private val ocrService: OcrService,
     private val fileStorageService: FileStorageService,
-    private val pdfGenerator: PdfGenerator
+    private val pdfGenerator: PdfGenerator,
+    private val preferences: ScannerPreferences
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ScanState())
@@ -34,7 +37,14 @@ class ScanViewModel(
     /** Called when ML Kit Document Scanner returns page URIs */
     fun onScanComplete(pageUris: List<Uri>, existingDocumentId: String? = null) {
         viewModelScope.launch(Dispatchers.IO) {
-            _state.update { it.copy(isProcessing = true, processingStep = "Loading images...") }
+            val settings = preferences.settings.value
+            val imageQuality = when (settings.cameraQuality) {
+                CameraQuality.UHD_4K -> 100
+                CameraQuality.HIGH -> 92
+                CameraQuality.STANDARD -> 80
+            }
+
+            _state.update { it.copy(isProcessing = true, processingStep = "Loading ${settings.cameraQuality.badge} images...") }
 
             try {
                 val documentId = existingDocumentId ?: UUID.randomUUID().toString()
@@ -50,31 +60,34 @@ class ScanViewModel(
                 // Save first page as document thumbnail
                 val thumbnailPath = fileStorageService.saveThumbnail(bitmaps.first(), documentId)
 
-                // Save all page images
+                // Save all page images with selected camera quality
                 val imagePaths = bitmaps.mapIndexed { index, bitmap ->
-                    fileStorageService.savePageImage(bitmap, documentId, index)
+                    fileStorageService.savePageImage(bitmap, documentId, index, quality = imageQuality)
                 }
 
-                // Run OCR on each page
-                _state.update { it.copy(processingStep = "Running OCR...") }
-                val ocrResults = bitmaps.map { bitmap ->
-                    ocrService.recognizeText(bitmap)
+                // Run OCR on each page (if auto OCR is enabled)
+                val ocrResults = if (settings.autoOcr) {
+                    _state.update { it.copy(processingStep = "Running AI OCR on ${bitmaps.size} pages...") }
+                    bitmaps.map { bitmap -> ocrService.recognizeText(bitmap) }
+                } else {
+                    emptyList()
                 }
 
                 val fullText = ocrResults.joinToString("\n\n--- Page Break ---\n\n") { it.fullText }
 
-                // Generate PDF
-                _state.update { it.copy(processingStep = "Generating PDF...") }
+                // Generate Searchable PDF using configured PDF Quality profile (e.g. UHD / High / Standard)
+                _state.update { it.copy(processingStep = "Generating ${settings.pdfQuality.badge} PDF...") }
                 val pageDataList = bitmaps.mapIndexed { i, bitmap ->
-                    PageData(bitmap = bitmap, extractedText = ocrResults[i].fullText)
+                    PageData(bitmap = bitmap, extractedText = ocrResults.getOrNull(i)?.fullText ?: "")
                 }
                 val pdfBytes = pdfGenerator.generatePdf(
                     pages = pageDataList,
-                    title = "Scanned Document"
+                    title = "Scanned Document",
+                    quality = settings.pdfQuality
                 )
                 val pdfPath = fileStorageService.savePdf(pdfBytes, documentId)
 
-                // Create or update Room document
+                // Create or update document in SQLite
                 val document = Document(
                     id = documentId,
                     title = generateTitle(ocrResults.firstOrNull()?.fullText),

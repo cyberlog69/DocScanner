@@ -57,7 +57,8 @@ fun DocScannerNavHost(
                 onStartScan = {
                     navController.navigate(Screen.Scanner.route)
                 },
-                viewModel = listViewModel
+                viewModel = listViewModel,
+                preferences = appContainer.preferences
             )
         }
 
@@ -70,7 +71,8 @@ fun DocScannerNavHost(
                             repository = appContainer.repository,
                             ocrService = appContainer.ocrService,
                             fileStorageService = appContainer.fileStorageService,
-                            pdfGenerator = appContainer.pdfGenerator
+                            pdfGenerator = appContainer.pdfGenerator,
+                            preferences = appContainer.preferences
                         ) as T
                     }
                 }
@@ -98,6 +100,7 @@ fun DocScannerNavHost(
                 factory = DocumentDetailViewModel.provideFactory(
                     repository = appContainer.repository,
                     fileStorageService = appContainer.fileStorageService,
+                    pdfGenerator = appContainer.pdfGenerator,
                     documentId = documentId
                 )
             )

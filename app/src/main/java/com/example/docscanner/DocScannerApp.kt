@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import com.example.docscanner.data.db.AppDatabase
 import com.example.docscanner.data.db.DocumentDao
+import com.example.docscanner.data.pref.ScannerPreferences
 import com.example.docscanner.data.repository.DocumentRepository
 import com.example.docscanner.service.DocumentScannerService
 import com.example.docscanner.service.FileStorageService
@@ -11,6 +12,7 @@ import com.example.docscanner.service.OcrService
 import com.example.docscanner.service.PdfGenerator
 
 class AppContainer(val context: Context) {
+    val preferences: ScannerPreferences by lazy { ScannerPreferences(context) }
     val database: AppDatabase by lazy { AppDatabase(context) }
     val documentDao: DocumentDao by lazy { database.documentDao }
     val repository: DocumentRepository by lazy { DocumentRepository(documentDao) }

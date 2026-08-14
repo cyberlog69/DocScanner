@@ -6,7 +6,6 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.docscanner.DocScannerApp
 import com.example.docscanner.ui.camera.ScanViewModel
-import com.example.docscanner.ui.documents.DocumentDetailViewModel
 import com.example.docscanner.ui.documents.DocumentListViewModel
 
 object AppViewModelProvider {
@@ -17,7 +16,8 @@ object AppViewModelProvider {
                 repository = app.container.repository,
                 ocrService = app.container.ocrService,
                 fileStorageService = app.container.fileStorageService,
-                pdfGenerator = app.container.pdfGenerator
+                pdfGenerator = app.container.pdfGenerator,
+                preferences = app.container.preferences
             )
         }
         initializer {

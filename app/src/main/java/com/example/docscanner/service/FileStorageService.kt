@@ -27,12 +27,12 @@ class FileStorageService(
     private val cacheDir: File
         get() = File(context.cacheDir, "scans").also { it.mkdirs() }
 
-    /** Saves a bitmap as JPEG to the documents directory. Returns the file path. */
-    fun savePageImage(bitmap: Bitmap, documentId: String, pageIndex: Int): String {
+    /** Saves a bitmap as JPEG to the documents directory with custom compression quality. Returns the file path. */
+    fun savePageImage(bitmap: Bitmap, documentId: String, pageIndex: Int, quality: Int = 92): String {
         val docDir = File(documentsDir, documentId).also { it.mkdirs() }
         val file = File(docDir, "page_${pageIndex}.jpg")
         FileOutputStream(file).use { out ->
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
+            bitmap.compress(Bitmap.CompressFormat.JPEG, quality.coerceIn(50, 100), out)
         }
         return file.absolutePath
     }
@@ -49,9 +49,9 @@ class FileStorageService(
     }
 
     /** Saves a PDF file for a document. Returns the file path. */
-    fun savePdf(data: ByteArray, documentId: String): String {
+    fun savePdf(data: ByteArray, documentId: String, fileName: String = "document.pdf"): String {
         val docDir = File(documentsDir, documentId).also { it.mkdirs() }
-        val file = File(docDir, "document.pdf")
+        val file = File(docDir, fileName)
         file.writeBytes(data)
         return file.absolutePath
     }
