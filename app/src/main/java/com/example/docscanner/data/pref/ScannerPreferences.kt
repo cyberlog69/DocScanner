@@ -18,10 +18,17 @@ enum class PdfQuality(val displayName: String, val dpi: Int, val compressionQual
     UHD_4K("Ultra HD (600 DPI)", 600, 100, "Archival quality with zero compression artifacts", "600 DPI UHD")
 }
 
+enum class ThemeMode(val displayName: String, val description: String) {
+    SYSTEM("System Default", "Follow device theme"),
+    LIGHT("Light", "Always use light theme"),
+    DARK("Dark", "Always use dark theme")
+}
+
 data class ScannerSettingsState(
     val cameraQuality: CameraQuality = CameraQuality.HIGH,
     val pdfQuality: PdfQuality = PdfQuality.HIGH,
-    val autoOcr: Boolean = true
+    val autoOcr: Boolean = true,
+    val themeMode: ThemeMode = ThemeMode.SYSTEM
 )
 
 class ScannerPreferences(context: Context) {
@@ -31,6 +38,7 @@ class ScannerPreferences(context: Context) {
         private const val KEY_CAMERA_QUALITY = "key_camera_quality"
         private const val KEY_PDF_QUALITY = "key_pdf_quality"
         private const val KEY_AUTO_OCR = "key_auto_ocr"
+        private const val KEY_THEME_MODE = "key_theme_mode"
     }
 
     private val _settings = MutableStateFlow(loadSettings())
@@ -40,11 +48,13 @@ class ScannerPreferences(context: Context) {
         val camOrdinal = prefs.getInt(KEY_CAMERA_QUALITY, CameraQuality.HIGH.ordinal)
         val pdfOrdinal = prefs.getInt(KEY_PDF_QUALITY, PdfQuality.HIGH.ordinal)
         val autoOcr = prefs.getBoolean(KEY_AUTO_OCR, true)
+        val themeOrdinal = prefs.getInt(KEY_THEME_MODE, ThemeMode.SYSTEM.ordinal)
 
         return ScannerSettingsState(
             cameraQuality = CameraQuality.entries.getOrNull(camOrdinal) ?: CameraQuality.HIGH,
             pdfQuality = PdfQuality.entries.getOrNull(pdfOrdinal) ?: PdfQuality.HIGH,
-            autoOcr = autoOcr
+            autoOcr = autoOcr,
+            themeMode = ThemeMode.entries.getOrNull(themeOrdinal) ?: ThemeMode.SYSTEM
         )
     }
 
@@ -61,5 +71,10 @@ class ScannerPreferences(context: Context) {
     fun setAutoOcr(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_AUTO_OCR, enabled).apply()
         _settings.value = _settings.value.copy(autoOcr = enabled)
+    }
+
+    fun setThemeMode(mode: ThemeMode) {
+        prefs.edit().putInt(KEY_THEME_MODE, mode.ordinal).apply()
+        _settings.value = _settings.value.copy(themeMode = mode)
     }
 }

@@ -18,7 +18,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
 
     companion object {
         const val DATABASE_NAME = "docscanner.db"
-        const val DATABASE_VERSION = 2   // v1→v2: category column changed INTEGER→TEXT
+        const val DATABASE_VERSION = 3   // v2→v3: added isPinned column
 
         const val TABLE_DOCUMENTS = "documents"
         const val TABLE_PAGES = "pages"
@@ -50,7 +50,8 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                 pageCount INTEGER NOT NULL,
                 thumbnailPath TEXT NOT NULL,
                 pdfPath TEXT NOT NULL,
-                extractedText TEXT NOT NULL
+                extractedText TEXT NOT NULL,
+                isPinned INTEGER NOT NULL DEFAULT 0
             )
             """.trimIndent()
         )
@@ -91,10 +92,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         var version = oldVersion
 
         // v1 → v2: Convert category column from INTEGER ordinal to TEXT name.
-        // Existing user data is preserved by reading each row's ordinal and
-        // writing back the enum name in the new column.
         if (version < 2) {
-            // 1. Create replacement table with TEXT category column
             db.execSQL(
                 """
                 CREATE TABLE IF NOT EXISTS documents_v2 (
@@ -106,12 +104,12 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                     pageCount INTEGER NOT NULL,
                     thumbnailPath TEXT NOT NULL,
                     pdfPath TEXT NOT NULL,
-                    extractedText TEXT NOT NULL
+                    extractedText TEXT NOT NULL,
+                    isPinned INTEGER NOT NULL DEFAULT 0
                 )
                 """.trimIndent()
             )
 
-            // 2. Copy rows, converting INTEGER ordinal → TEXT name on the fly
             val cursor = db.rawQuery("SELECT * FROM $TABLE_DOCUMENTS", null)
             cursor.use { c ->
                 while (c.moveToNext()) {
@@ -120,8 +118,8 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                     db.execSQL(
                         """
                         INSERT INTO documents_v2 (id, title, category, createdAt, modifiedAt,
-                            pageCount, thumbnailPath, pdfPath, extractedText)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            pageCount, thumbnailPath, pdfPath, extractedText, isPinned)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                         """.trimIndent(),
                         arrayOf(
                             c.getString(c.getColumnIndexOrThrow("id")),
@@ -138,7 +136,6 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                 }
             }
 
-            // 3. Swap tables and rebuild FTS index
             db.execSQL("DROP TABLE IF EXISTS $TABLE_DOCUMENTS_FTS")
             db.execSQL("DROP TABLE $TABLE_DOCUMENTS")
             db.execSQL("ALTER TABLE documents_v2 RENAME TO $TABLE_DOCUMENTS")
@@ -151,13 +148,16 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                 )
                 """.trimIndent()
             )
-            // Rebuild FTS content from migrated data
             db.execSQL("INSERT INTO $TABLE_DOCUMENTS_FTS(docid, title, extractedText) SELECT rowid, title, extractedText FROM $TABLE_DOCUMENTS")
 
             version = 2
         }
 
-        // Future migrations: add more `if (version < N)` blocks here
+        // v2 → v3: Add isPinned column
+        if (version < 3) {
+            db.execSQL("ALTER TABLE $TABLE_DOCUMENTS ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0")
+            version = 3
+        }
     }
 
     // ── Document DAO Implementation ───────────────────────────────────────────
@@ -173,6 +173,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
             put("thumbnailPath", document.thumbnailPath)
             put("pdfPath", document.pdfPath)
             put("extractedText", document.extractedText)
+            put("isPinned", if (document.isPinned) 1 else 0)
         }
         writableDatabase.insertWithOnConflict(TABLE_DOCUMENTS, null, values, SQLiteDatabase.CONFLICT_REPLACE)
         updateFts(document.id, document.title, document.extractedText)
@@ -188,6 +189,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
             put("thumbnailPath", document.thumbnailPath)
             put("pdfPath", document.pdfPath)
             put("extractedText", document.extractedText)
+            put("isPinned", if (document.isPinned) 1 else 0)
         }
         writableDatabase.update(TABLE_DOCUMENTS, values, "id = ?", arrayOf(document.id))
         updateFts(document.id, document.title, document.extractedText)
@@ -203,7 +205,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
     override fun getAllDocuments(): Flow<List<Document>> {
         return changeNotifier.map {
             withContext(Dispatchers.IO) {
-                queryDocuments("SELECT * FROM $TABLE_DOCUMENTS ORDER BY createdAt DESC", null)
+                queryDocuments("SELECT * FROM $TABLE_DOCUMENTS ORDER BY isPinned DESC, createdAt DESC", null)
             }
         }
     }
@@ -212,7 +214,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         return changeNotifier.map {
             withContext(Dispatchers.IO) {
                 queryDocuments(
-                    "SELECT * FROM $TABLE_DOCUMENTS WHERE category = ? ORDER BY createdAt DESC",
+                    "SELECT * FROM $TABLE_DOCUMENTS WHERE category = ? ORDER BY isPinned DESC, createdAt DESC",
                     arrayOf(category.name)   // Match by enum name, not ordinal
                 )
             }
@@ -240,6 +242,15 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
     override suspend fun updateCategory(id: String, category: DocumentCategory, now: Long): Unit = withContext(Dispatchers.IO) {
         val values = ContentValues().apply {
             put("category", category.name)   // Store enum name, not ordinal
+            put("modifiedAt", now)
+        }
+        writableDatabase.update(TABLE_DOCUMENTS, values, "id = ?", arrayOf(id))
+        notifyChanged()
+    }
+
+    override suspend fun togglePin(id: String, isPinned: Boolean, now: Long): Unit = withContext(Dispatchers.IO) {
+        val values = ContentValues().apply {
+            put("isPinned", if (isPinned) 1 else 0)
             put("modifiedAt", now)
         }
         writableDatabase.update(TABLE_DOCUMENTS, values, "id = ?", arrayOf(id))
@@ -274,7 +285,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
             withContext(Dispatchers.IO) {
                 val cleanQuery = query.trim()
                 if (cleanQuery.isEmpty()) {
-                    queryDocuments("SELECT * FROM $TABLE_DOCUMENTS ORDER BY createdAt DESC", null)
+                    queryDocuments("SELECT * FROM $TABLE_DOCUMENTS ORDER BY isPinned DESC, createdAt DESC", null)
                 } else {
                     // Build an FTS4 MATCH expression with prefix wildcard on each token.
                     // e.g. "hello world" → "hello* world*" so partial words still match.
@@ -287,7 +298,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                         SELECT d.* FROM $TABLE_DOCUMENTS d
                         INNER JOIN $TABLE_DOCUMENTS_FTS fts ON fts.docid = d.rowid
                         WHERE $TABLE_DOCUMENTS_FTS MATCH ?
-                        ORDER BY d.createdAt DESC
+                        ORDER BY d.isPinned DESC, d.createdAt DESC
                         """.trimIndent(),
                         arrayOf(ftsQuery)
                     )
@@ -388,8 +399,10 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
             val thumbnailPathIdx = c.getColumnIndexOrThrow("thumbnailPath")
             val pdfPathIdx = c.getColumnIndexOrThrow("pdfPath")
             val extractedTextIdx = c.getColumnIndexOrThrow("extractedText")
+            val isPinnedIdx = c.getColumnIndex("isPinned")
 
             while (c.moveToNext()) {
+                val isPinned = if (isPinnedIdx >= 0) c.getInt(isPinnedIdx) == 1 else false
                 list.add(
                     Document(
                         id = c.getString(idIdx),
@@ -400,7 +413,8 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                         pageCount = c.getInt(pageCountIdx),
                         thumbnailPath = c.getString(thumbnailPathIdx),
                         pdfPath = c.getString(pdfPathIdx),
-                        extractedText = c.getString(extractedTextIdx)
+                        extractedText = c.getString(extractedTextIdx),
+                        isPinned = isPinned
                     )
                 )
             }

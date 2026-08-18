@@ -38,6 +38,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.docscanner.data.pref.CameraQuality
 import com.example.docscanner.data.pref.PdfQuality
 import com.example.docscanner.data.pref.ScannerPreferences
+import com.example.docscanner.data.pref.ThemeMode
+import androidx.compose.material.icons.filled.DarkMode
 
 @Composable
 fun SettingsDialog(
@@ -49,7 +51,7 @@ fun SettingsDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text("Scanner & PDF Settings", fontWeight = FontWeight.Bold)
+            Text("Settings", fontWeight = FontWeight.Bold)
         },
         text = {
             Column(
@@ -58,6 +60,67 @@ fun SettingsDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                // ── Theme / Appearance Section ──────────────────────────────
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.DarkMode,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "App Theme",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                ThemeMode.entries.forEach { mode ->
+                    val isSelected = mode == settings.themeMode
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { preferences.setThemeMode(mode) },
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isSelected) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            }
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = { preferences.setThemeMode(mode) }
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = mode.displayName,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = mode.description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
                 // ── Camera Quality Section ──────────────────────────────────
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(

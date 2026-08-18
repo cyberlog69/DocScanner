@@ -12,7 +12,8 @@ data class Document(
     val pageCount: Int = 0,
     val thumbnailPath: String = "",
     val pdfPath: String = "",
-    val extractedText: String = "" // Full OCR text for search fallback
+    val extractedText: String = "", // Full OCR text for search fallback
+    val isPinned: Boolean = false
 )
 
 enum class DocumentCategory(val displayName: String, val emoji: String) {

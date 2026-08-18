@@ -37,6 +37,9 @@ class DocumentRepository(
     suspend fun updateCategory(id: String, category: DocumentCategory) =
         documentDao.updateCategory(id, category)
 
+    suspend fun togglePin(id: String, isPinned: Boolean) =
+        documentDao.togglePin(id, isPinned)
+
     suspend fun updateDocumentMeta(
         id: String,
         pageCount: Int,

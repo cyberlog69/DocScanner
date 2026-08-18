@@ -77,6 +77,42 @@ class FileStorageService(
         File(thumbnailsDir, "${documentId}.jpg").delete()
     }
 
+    /** Deletes a single page image file. */
+    fun deletePageFile(imagePath: String): Boolean {
+        return try {
+            val file = File(imagePath)
+            if (file.exists()) file.delete() else false
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** Rotates an image file on disk by [degrees] clockwise and saves it back. */
+    fun rotateImageFile(imagePath: String, degrees: Float = 90f): Boolean {
+        return try {
+            val bitmap = BitmapFactory.decodeFile(imagePath) ?: return false
+            val matrix = android.graphics.Matrix().apply { postRotate(degrees) }
+            val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+            FileOutputStream(imagePath).use { out ->
+                rotated.compress(Bitmap.CompressFormat.JPEG, 95, out)
+            }
+            if (rotated !== bitmap) rotated.recycle()
+            bitmap.recycle()
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** Gets the total storage size in bytes occupied by a specific document's files (images + PDF + thumbnail). */
+    fun getDocumentStorageBytes(documentId: String): Long {
+        val docDir = File(documentsDir, documentId)
+        val thumb = File(thumbnailsDir, "${documentId}.jpg")
+        val docBytes = if (docDir.exists()) docDir.walkBottomUp().filter { it.isFile }.sumOf { it.length() } else 0L
+        val thumbBytes = if (thumb.exists()) thumb.length() else 0L
+        return docBytes + thumbBytes
+    }
+
     /** Gets a content URI via FileProvider for sharing. */
     fun getShareUri(context: Context, file: File): Uri {
         return androidx.core.content.FileProvider.getUriForFile(
@@ -90,4 +126,14 @@ class FileStorageService(
     fun getTotalStorageUsed(): Long = documentsDir.walkBottomUp()
         .filter { it.isFile }
         .sumOf { it.length() }
+
+    companion object {
+        /** Formats byte count into a human-readable string like "1.2 MB" or "450 KB". */
+        fun formatFileSize(bytes: Long): String {
+            if (bytes <= 0) return "0 B"
+            val units = arrayOf("B", "KB", "MB", "GB")
+            val digitGroups = (Math.log10(bytes.toDouble()) / Math.log10(1024.0)).toInt().coerceIn(0, units.size - 1)
+            return String.format(Locale.getDefault(), "%.1f %s", bytes / Math.pow(1024.0, digitGroups.toDouble()), units[digitGroups])
+        }
+    }
 }

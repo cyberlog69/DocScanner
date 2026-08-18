@@ -1,11 +1,9 @@
 package com.example.docscanner.ui.documents
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -31,21 +29,25 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Label
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Settings
-import com.example.docscanner.data.pref.ScannerPreferences
-import com.example.docscanner.ui.settings.SettingsDialog
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DockedSearchBar
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -60,6 +62,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
@@ -70,15 +73,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.docscanner.data.model.Document
 import com.example.docscanner.data.model.DocumentCategory
+import com.example.docscanner.data.model.SortOrder
+import com.example.docscanner.data.pref.ScannerPreferences
+import com.example.docscanner.service.FileStorageService
+import com.example.docscanner.ui.components.DocScannerBrandLogo
+import com.example.docscanner.ui.settings.SettingsDialog
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -95,40 +103,144 @@ fun DocumentListScreen(
     val selectedCategory by viewModel.selectedCategory.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val isGridView by viewModel.isGridView.collectAsStateWithLifecycle()
+    val sortOrder by viewModel.sortOrder.collectAsStateWithLifecycle()
+    val selectedDocIds by viewModel.selectedDocIds.collectAsStateWithLifecycle()
+    val totalStorageBytes by viewModel.totalStorageBytes.collectAsStateWithLifecycle()
+
+    val isSelectionMode = selectedDocIds.isNotEmpty()
 
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var showSortMenu by remember { mutableStateOf(false) }
+    var showBatchCategoryDialog by remember { mutableStateOf(false) }
+    var showBatchDeleteDialog by remember { mutableStateOf(false) }
     var documentToDelete by remember { mutableStateOf<Document?>(null) }
     var documentToRename by remember { mutableStateOf<Document?>(null) }
+
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+
+    BackHandler(enabled = isSelectionMode) {
+        viewModel.clearSelection()
+    }
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            LargeTopAppBar(
-                title = { Text("DocScanner") },
-                actions = {
-                    IconButton(onClick = { viewModel.toggleViewMode() }) {
-                        Icon(
-                            imageVector = if (isGridView) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
-                            contentDescription = if (isGridView) "List view" else "Grid view"
+            if (isSelectionMode) {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = "${selectedDocIds.size} selected",
+                            fontWeight = FontWeight.Bold
                         )
-                    }
-                    IconButton(onClick = { showSettingsDialog = true }) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "Settings"
-                        )
-                    }
-                },
-                scrollBehavior = scrollBehavior
-            )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = { viewModel.clearSelection() }) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear selection")
+                        }
+                    },
+                    actions = {
+                        IconButton(
+                            onClick = {
+                                if (selectedDocIds.size == documents.size) {
+                                    viewModel.clearSelection()
+                                } else {
+                                    viewModel.selectAll(documents.map { it.id })
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = if (selectedDocIds.size == documents.size) Icons.Default.CheckCircle else Icons.Default.SelectAll,
+                                contentDescription = "Select All"
+                            )
+                        }
+                        IconButton(onClick = { viewModel.togglePinForSelected(pin = true) }) {
+                            Icon(Icons.Default.PushPin, contentDescription = "Pin selected")
+                        }
+                        IconButton(onClick = { showBatchCategoryDialog = true }) {
+                            Icon(Icons.Default.Label, contentDescription = "Change category")
+                        }
+                        IconButton(onClick = { showBatchDeleteDialog = true }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete selected", tint = MaterialTheme.colorScheme.error)
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        actionIconContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                )
+            } else {
+                LargeTopAppBar(
+                    title = { Text("DocScanner") },
+                    actions = {
+                        // Sort Menu
+                        Box {
+                            IconButton(onClick = { showSortMenu = true }) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Sort,
+                                    contentDescription = "Sort documents"
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = showSortMenu,
+                                onDismissRequest = { showSortMenu = false }
+                            ) {
+                                SortOrder.entries.forEach { order ->
+                                    val isSelected = order == sortOrder
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                text = order.displayName,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                            )
+                                        },
+                                        trailingIcon = {
+                                            if (isSelected) {
+                                                Icon(
+                                                    Icons.Default.Check,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                        },
+                                        onClick = {
+                                            viewModel.setSortOrder(order)
+                                            showSortMenu = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        // View mode toggle
+                        IconButton(onClick = { viewModel.toggleViewMode() }) {
+                            Icon(
+                                imageVector = if (isGridView) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
+                                contentDescription = if (isGridView) "List view" else "Grid view"
+                            )
+                        }
+
+                        // Settings
+                        IconButton(onClick = { showSettingsDialog = true }) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Settings"
+                            )
+                        }
+                    },
+                    scrollBehavior = scrollBehavior
+                )
+            }
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = onStartScan,
-                containerColor = MaterialTheme.colorScheme.primary
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Scan document")
+            if (!isSelectionMode) {
+                FloatingActionButton(
+                    onClick = onStartScan,
+                    containerColor = MaterialTheme.colorScheme.primary
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Scan document")
+                }
             }
         }
     ) { padding ->
@@ -137,26 +249,28 @@ fun DocumentListScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // Search bar
-            DockedSearchBar(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                query = searchQuery,
-                onQueryChange = viewModel::setSearchQuery,
-                onSearch = {},
-                active = false,
-                onActiveChange = {},
-                placeholder = { Text("Search documents...") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (searchQuery.isNotBlank()) {
-                        IconButton(onClick = { viewModel.setSearchQuery("") }) {
-                            Icon(Icons.Default.Close, contentDescription = "Clear search")
+            // Search bar (only when not in selection mode)
+            if (!isSelectionMode) {
+                DockedSearchBar(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    query = searchQuery,
+                    onQueryChange = viewModel::setSearchQuery,
+                    onSearch = {},
+                    active = false,
+                    onActiveChange = {},
+                    placeholder = { Text("Search documents...") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    trailingIcon = {
+                        if (searchQuery.isNotBlank()) {
+                            IconButton(onClick = { viewModel.setSearchQuery("") }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear search")
+                            }
                         }
                     }
-                }
-            ) {}
+                ) {}
+            }
 
             // Category filter chips
             LazyRow(
@@ -175,14 +289,28 @@ fun DocumentListScreen(
                 }
             }
 
-            // Document count
+            // Document count & Storage Stats
             if (documents.isNotEmpty()) {
-                Text(
-                    text = "${documents.size} document${if (documents.size != 1) "s" else ""}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "${documents.size} document${if (documents.size != 1) "s" else ""}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                    if (totalStorageBytes > 0L) {
+                        Text(
+                            text = FileStorageService.formatFileSize(totalStorageBytes),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        )
+                    }
+                }
             }
 
             // Empty state
@@ -195,13 +323,13 @@ fun DocumentListScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.padding(32.dp)
                     ) {
-                        com.example.docscanner.ui.components.DocScannerBrandLogo(size = 96.dp)
+                        DocScannerBrandLogo(size = 96.dp)
                         Spacer(modifier = Modifier.height(20.dp))
                         Text(
                             text = if (searchQuery.isNotBlank()) "No results for \"$searchQuery\""
                                    else "DocScanner Offline AI",
                             style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                            fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
@@ -221,12 +349,25 @@ fun DocumentListScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(documents, key = { it.id }) { doc ->
+                        val isSelected = doc.id in selectedDocIds
                         DocumentGridCard(
                             document = doc,
+                            isSelectionMode = isSelectionMode,
+                            isSelected = isSelected,
                             modifier = Modifier.animateItem(),
-                            onClick = { onNavigateToDocument(doc.id) },
+                            onClick = {
+                                if (isSelectionMode) {
+                                    viewModel.toggleSelection(doc.id)
+                                } else {
+                                    onNavigateToDocument(doc.id)
+                                }
+                            },
+                            onLongClick = {
+                                viewModel.toggleSelection(doc.id)
+                            },
                             onDelete = { documentToDelete = doc },
-                            onRename = { documentToRename = doc }
+                            onRename = { documentToRename = doc },
+                            onTogglePin = { viewModel.togglePin(doc) }
                         )
                     }
                 }
@@ -236,12 +377,25 @@ fun DocumentListScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(documents, key = { it.id }) { doc ->
+                        val isSelected = doc.id in selectedDocIds
                         DocumentListCard(
                             document = doc,
+                            isSelectionMode = isSelectionMode,
+                            isSelected = isSelected,
                             modifier = Modifier.animateItem(),
-                            onClick = { onNavigateToDocument(doc.id) },
+                            onClick = {
+                                if (isSelectionMode) {
+                                    viewModel.toggleSelection(doc.id)
+                                } else {
+                                    onNavigateToDocument(doc.id)
+                                }
+                            },
+                            onLongClick = {
+                                viewModel.toggleSelection(doc.id)
+                            },
                             onDelete = { documentToDelete = doc },
-                            onRename = { documentToRename = doc }
+                            onRename = { documentToRename = doc },
+                            onTogglePin = { viewModel.togglePin(doc) }
                         )
                     }
                 }
@@ -272,6 +426,55 @@ fun DocumentListScreen(
             },
             dismissButton = {
                 TextButton(onClick = { documentToDelete = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    // ── Batch Delete Dialog ───────────────────────────────────────────────────
+    if (showBatchDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showBatchDeleteDialog = false },
+            title = { Text("Delete ${selectedDocIds.size} Documents") },
+            text = { Text("Are you sure you want to delete ${selectedDocIds.size} selected documents? This cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteSelectedDocuments(documents)
+                        showBatchDeleteDialog = false
+                    }
+                ) {
+                    Text("Delete All", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatchDeleteDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    // ── Batch Category Dialog ─────────────────────────────────────────────────
+    if (showBatchCategoryDialog) {
+        AlertDialog(
+            onDismissRequest = { showBatchCategoryDialog = false },
+            title = { Text("Move ${selectedDocIds.size} Documents to Category") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    DocumentCategory.entries.filter { it != DocumentCategory.ALL }.forEach { cat ->
+                        FilterChip(
+                            selected = false,
+                            onClick = {
+                                viewModel.changeCategoryForSelected(cat)
+                                showBatchCategoryDialog = false
+                            },
+                            label = { Text("${cat.emoji} ${cat.displayName}") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showBatchCategoryDialog = false }) { Text("Cancel") }
             }
         )
     }
@@ -311,10 +514,14 @@ fun DocumentListScreen(
 @Composable
 private fun DocumentGridCard(
     document: Document,
+    isSelectionMode: Boolean,
+    isSelected: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     onDelete: () -> Unit,
-    onRename: () -> Unit
+    onRename: () -> Unit,
+    onTogglePin: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
@@ -323,10 +530,17 @@ private fun DocumentGridCard(
             .fillMaxWidth()
             .combinedClickable(
                 onClick = onClick,
-                onLongClick = { showMenu = true }
+                onLongClick = {
+                    if (isSelectionMode) onClick() else {
+                        showMenu = true
+                    }
+                }
             ),
         shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        border = if (isSelected) {
+            androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+        } else null,
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 4.dp else 2.dp)
     ) {
         Column {
             Box(
@@ -352,13 +566,36 @@ private fun DocumentGridCard(
                     }
                 }
 
-                // Page count badge
-                Badge(
+                // Top row: Pin indicator on left, Page count or Checkbox on right
+                Row(
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(8.dp)
+                        .fillMaxWidth()
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("${document.pageCount}p")
+                    if (document.isPinned) {
+                        Box(
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
+                                .padding(horizontal = 6.dp, vertical = 3.dp)
+                        ) {
+                            Text("📌", style = MaterialTheme.typography.labelSmall)
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.size(1.dp))
+                    }
+
+                    if (isSelectionMode) {
+                        Checkbox(
+                            checked = isSelected,
+                            onCheckedChange = { onClick() }
+                        )
+                    } else {
+                        Badge {
+                            Text("${document.pageCount}p")
+                        }
+                    }
                 }
 
                 // Category chip
@@ -397,6 +634,16 @@ private fun DocumentGridCard(
 
         DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
             DropdownMenuItem(
+                text = { Text(if (document.isPinned) "Unpin Document" else "Pin to Top") },
+                leadingIcon = { Icon(Icons.Default.PushPin, null) },
+                onClick = { showMenu = false; onTogglePin() }
+            )
+            DropdownMenuItem(
+                text = { Text("Select") },
+                leadingIcon = { Icon(Icons.Default.CheckCircle, null) },
+                onClick = { showMenu = false; onLongClick() }
+            )
+            DropdownMenuItem(
                 text = { Text("Rename") },
                 leadingIcon = { Icon(Icons.Default.Edit, null) },
                 onClick = { showMenu = false; onRename() }
@@ -414,24 +661,46 @@ private fun DocumentGridCard(
 @Composable
 private fun DocumentListCard(
     document: Document,
+    isSelectionMode: Boolean,
+    isSelected: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     onDelete: () -> Unit,
-    onRename: () -> Unit
+    onRename: () -> Unit,
+    onTogglePin: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
 
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .combinedClickable(onClick = onClick, onLongClick = { showMenu = true }),
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = {
+                    if (isSelectionMode) onClick() else {
+                        showMenu = true
+                    }
+                }
+            ),
         shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        border = if (isSelected) {
+            androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+        } else null,
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 3.dp else 1.dp)
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (isSelectionMode) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onClick() }
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+            }
+
             Box(
                 modifier = Modifier
                     .size(56.dp)
@@ -454,12 +723,19 @@ private fun DocumentListCard(
             Spacer(modifier = Modifier.width(12.dp))
 
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = document.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = document.title,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (document.isPinned) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("📌", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
@@ -482,6 +758,16 @@ private fun DocumentListCard(
             }
 
             DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                DropdownMenuItem(
+                    text = { Text(if (document.isPinned) "Unpin Document" else "Pin to Top") },
+                    leadingIcon = { Icon(Icons.Default.PushPin, null) },
+                    onClick = { showMenu = false; onTogglePin() }
+                )
+                DropdownMenuItem(
+                    text = { Text("Select") },
+                    leadingIcon = { Icon(Icons.Default.CheckCircle, null) },
+                    onClick = { showMenu = false; onLongClick() }
+                )
                 DropdownMenuItem(
                     text = { Text("Rename") },
                     leadingIcon = { Icon(Icons.Default.Edit, null) },

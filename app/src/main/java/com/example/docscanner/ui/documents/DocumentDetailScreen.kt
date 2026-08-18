@@ -27,11 +27,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
@@ -49,6 +53,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
@@ -74,6 +79,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.docscanner.data.model.DocumentCategory
 import com.example.docscanner.data.pref.PdfQuality
+import com.example.docscanner.service.FileStorageService
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -89,6 +95,7 @@ fun DocumentDetailScreen(
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showDeletePageDialog by remember { mutableStateOf(false) }
     var showRenameDialog by remember { mutableStateOf(false) }
     var showCategoryDialog by remember { mutableStateOf(false) }
     var showPdfQualityDialog by remember { mutableStateOf(false) }
@@ -98,15 +105,27 @@ fun DocumentDetailScreen(
     val doc = state.document
     val pages = state.pages
 
+    // Ensure selectedPageIndex stays within bounds
+    if (pages.isNotEmpty() && selectedPageIndex >= pages.size) {
+        selectedPageIndex = pages.size - 1
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = doc?.title ?: "Document",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = doc?.title ?: "Document",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (doc?.isPinned == true) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("📌", style = MaterialTheme.typography.titleSmall)
+                        }
+                    }
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
@@ -114,6 +133,13 @@ fun DocumentDetailScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { viewModel.togglePin() }) {
+                        Icon(
+                            imageVector = Icons.Default.PushPin,
+                            contentDescription = if (doc?.isPinned == true) "Unpin" else "Pin",
+                            tint = if (doc?.isPinned == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
                     IconButton(onClick = { showPdfQualityDialog = true }) {
                         Icon(Icons.Default.PictureAsPdf, "Export PDF")
                     }
@@ -124,6 +150,14 @@ fun DocumentDetailScreen(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false }
                     ) {
+                        DropdownMenuItem(
+                            text = { Text(if (doc?.isPinned == true) "Unpin Document" else "Pin to Top") },
+                            leadingIcon = { Icon(Icons.Default.PushPin, null) },
+                            onClick = {
+                                showMenu = false
+                                viewModel.togglePin()
+                            }
+                        )
                         DropdownMenuItem(
                             text = { Text("Export UHD PDF (600 DPI)") },
                             leadingIcon = { Icon(Icons.Default.HighQuality, null) },
@@ -155,7 +189,7 @@ fun DocumentDetailScreen(
                             onClick = { showMenu = false; showCategoryDialog = true }
                         )
                         DropdownMenuItem(
-                            text = { Text("Delete") },
+                            text = { Text("Delete Document") },
                             leadingIcon = { Icon(Icons.Default.Delete, null) },
                             onClick = { showMenu = false; showDeleteDialog = true }
                         )
@@ -297,6 +331,38 @@ fun DocumentDetailScreen(
                             }
                         }
                     }
+
+                    // Page action buttons (Rotate & Delete page)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                pages.getOrNull(selectedPageIndex)?.let { page ->
+                                    viewModel.rotatePage(page, 90f)
+                                }
+                            }
+                        ) {
+                            Icon(Icons.Default.RotateRight, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Rotate 90°")
+                        }
+
+                        OutlinedButton(
+                            modifier = Modifier.weight(1f),
+                            onClick = { showDeletePageDialog = true },
+                            colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
+                            )
+                        ) {
+                            Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(if (pages.size <= 1) "Delete Doc" else "Delete Page")
+                        }
+                    }
                 }
 
                 // Document Metadata Card
@@ -329,6 +395,8 @@ fun DocumentDetailScreen(
                         Spacer(modifier = Modifier.height(8.dp))
                         doc?.let {
                             MetadataRow("Pages", "${it.pageCount}")
+                            MetadataRow("File Size", FileStorageService.formatFileSize(state.storageBytes))
+                            MetadataRow("Pinned", if (it.isPinned) "Yes 📌" else "No")
                             MetadataRow("Created", formatDate(it.createdAt))
                             MetadataRow("Modified", formatDate(it.modifiedAt))
                         }
@@ -530,7 +598,7 @@ fun DocumentDetailScreen(
         )
     }
 
-    // ── Delete Dialog ─────────────────────────────────────────────────────────
+    // ── Delete Document Dialog ───────────────────────────────────────────────
     if (showDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
@@ -548,6 +616,38 @@ fun DocumentDetailScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    // ── Delete Page Dialog ───────────────────────────────────────────────────
+    if (showDeletePageDialog) {
+        val isLastPage = pages.size <= 1
+        AlertDialog(
+            onDismissRequest = { showDeletePageDialog = false },
+            title = { Text(if (isLastPage) "Delete Entire Document?" else "Delete Page ${selectedPageIndex + 1}?") },
+            text = {
+                Text(
+                    if (isLastPage)
+                        "This is the only page in \"${doc?.title}\". Deleting this page will delete the entire document."
+                    else
+                        "Are you sure you want to delete page ${selectedPageIndex + 1} of ${pages.size}?"
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeletePageDialog = false
+                        pages.getOrNull(selectedPageIndex)?.let { page ->
+                            viewModel.deletePage(page, onDocumentDeleted = onNavigateBack)
+                        }
+                    }
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeletePageDialog = false }) { Text("Cancel") }
             }
         )
     }
