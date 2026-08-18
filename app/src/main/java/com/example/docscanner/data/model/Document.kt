@@ -26,6 +26,12 @@ enum class DocumentCategory(val displayName: String, val emoji: String) {
     OTHER("Other", "📎");
 
     companion object {
-        fun fromOrdinal(ordinal: Int): DocumentCategory = entries.getOrNull(ordinal) ?: OTHER
+        /** Primary lookup — uses enum name (stable across reordering). */
+        fun fromName(name: String): DocumentCategory =
+            entries.firstOrNull { it.name == name } ?: OTHER
+
+        /** Legacy lookup by ordinal — only used during DB migration from v1→v2. */
+        fun fromOrdinal(ordinal: Int): DocumentCategory =
+            entries.getOrNull(ordinal) ?: OTHER
     }
 }
