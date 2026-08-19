@@ -40,6 +40,9 @@ class DocumentRepository(
     suspend fun togglePin(id: String, isPinned: Boolean) =
         documentDao.togglePin(id, isPinned)
 
+    suspend fun updateTags(id: String, tags: List<String>) =
+        documentDao.updateTags(id, tags)
+
     suspend fun updateDocumentMeta(
         id: String,
         pageCount: Int,

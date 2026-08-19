@@ -13,8 +13,20 @@ data class Document(
     val thumbnailPath: String = "",
     val pdfPath: String = "",
     val extractedText: String = "", // Full OCR text for search fallback
-    val isPinned: Boolean = false
-)
+    val isPinned: Boolean = false,
+    val tags: List<String> = emptyList()
+) {
+    /** Formats tags as comma-separated string for SQLite storage. */
+    fun tagsToDbString(): String = tags.joinToString(",") { it.trim() }
+
+    companion object {
+        /** Parses comma-separated tags string from SQLite. */
+        fun parseTagsString(raw: String?): List<String> {
+            if (raw.isNullOrBlank()) return emptyList()
+            return raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        }
+    }
+}
 
 enum class DocumentCategory(val displayName: String, val emoji: String) {
     ALL("All", "📄"),

@@ -7,28 +7,28 @@
 
     <!-- Document Paper Base Sheet -->
     <path
-        android:pathData="M37,34 h30 a4,4 0 0 1 4,4 v34 a4,4 0 0 1 -4,4 h-30 a4,4 0 0 1 -4,-4 v-34 a4,4 0 0 1 4,-4 z"
-        android:fillColor="#FFFFFF" />
+        android:pathData="M35,29 h34 a4,4 0 0 1 4,4 v42 a4,4 0 0 1 -4,4 h-34 a4,4 0 0 1 -4,-4 v-42 a4,4 0 0 1 4,-4 z"
+        android:fillColor="#000000" />
 
-    <!-- Text Lines -->
+    <!-- Document Lines (Cutout) -->
     <path
-        android:pathData="M42,42 L55,42 M42,48 L66,48 M42,54 L62,54 M42,60 L57,60 M42,66 L50,66"
-        android:strokeWidth="2.0"
-        android:strokeColor="#000000"
+        android:pathData="M40,38 L55,38 M40,46 L64,46 M40,52 L60,52 M40,58 L54,58 M40,64 L48,64"
+        android:strokeWidth="2.2"
+        android:strokeColor="#FFFFFF"
         android:strokeLineCap="round" />
 
-    <!-- Viewfinder Corners -->
+    <!-- Scanner Viewfinder Brackets -->
     <path
-        android:pathData="M28,37 L28,29 A3,3 0 0 1 31,26 L39,26 M69,26 L77,26 A3,3 0 0 1 80,29 L80,37 M28,71 L28,79 A3,3 0 0 0 31,82 L39,82 M69,82 L77,82 A3,3 0 0 0 80,79 L80,71"
-        android:strokeWidth="3.2"
-        android:strokeColor="#FFFFFF"
+        android:pathData="M26,38 L26,27 A3,3 0 0 1 29,24 L40,24 M68,24 L79,24 A3,3 0 0 1 82,27 L82,38 M26,70 L26,81 A3,3 0 0 0 29,84 L40,84 M68,84 L79,84 A3,3 0 0 0 82,81 L82,70"
+        android:strokeWidth="3.5"
+        android:strokeColor="#000000"
         android:strokeLineCap="round"
         android:strokeLineJoin="round" />
 
     <!-- Laser Beam -->
     <path
-        android:pathData="M30,52 L78,52"
-        android:strokeWidth="2.0"
-        android:strokeColor="#FFFFFF"
+        android:pathData="M28,54 L80,54"
+        android:strokeWidth="2.5"
+        android:strokeColor="#000000"
         android:strokeLineCap="round" />
 </vector>

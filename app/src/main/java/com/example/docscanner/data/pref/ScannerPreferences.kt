@@ -24,11 +24,21 @@ enum class ThemeMode(val displayName: String, val description: String) {
     DARK("Dark", "Always use dark theme")
 }
 
+enum class OcrLanguage(val displayName: String, val nativeName: String, val badge: String) {
+    LATIN("English / Latin", "English, Spanish, French, German, etc.", "EN/LATIN"),
+    DEVANAGARI("Hindi / Devanagari", "हिन्दी, मराठी, संस्कृत", "HI/DEV"),
+    CHINESE("Chinese", "中文 (简体 / 繁體)", "ZH/CN"),
+    JAPANESE("Japanese", "日本語 (漢字 / かな)", "JA/JP"),
+    KOREAN("Korean", "한국어 (한글)", "KO/KR")
+}
+
 data class ScannerSettingsState(
     val cameraQuality: CameraQuality = CameraQuality.HIGH,
     val pdfQuality: PdfQuality = PdfQuality.HIGH,
     val autoOcr: Boolean = true,
-    val themeMode: ThemeMode = ThemeMode.SYSTEM
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val ocrLanguage: OcrLanguage = OcrLanguage.LATIN,
+    val isBiometricLockEnabled: Boolean = false
 )
 
 class ScannerPreferences(context: Context) {
@@ -39,6 +49,8 @@ class ScannerPreferences(context: Context) {
         private const val KEY_PDF_QUALITY = "key_pdf_quality"
         private const val KEY_AUTO_OCR = "key_auto_ocr"
         private const val KEY_THEME_MODE = "key_theme_mode"
+        private const val KEY_OCR_LANGUAGE = "key_ocr_language"
+        private const val KEY_BIOMETRIC_LOCK = "key_biometric_lock"
     }
 
     private val _settings = MutableStateFlow(loadSettings())
@@ -49,12 +61,16 @@ class ScannerPreferences(context: Context) {
         val pdfOrdinal = prefs.getInt(KEY_PDF_QUALITY, PdfQuality.HIGH.ordinal)
         val autoOcr = prefs.getBoolean(KEY_AUTO_OCR, true)
         val themeOrdinal = prefs.getInt(KEY_THEME_MODE, ThemeMode.SYSTEM.ordinal)
+        val langOrdinal = prefs.getInt(KEY_OCR_LANGUAGE, OcrLanguage.LATIN.ordinal)
+        val bioLock = prefs.getBoolean(KEY_BIOMETRIC_LOCK, false)
 
         return ScannerSettingsState(
             cameraQuality = CameraQuality.entries.getOrNull(camOrdinal) ?: CameraQuality.HIGH,
             pdfQuality = PdfQuality.entries.getOrNull(pdfOrdinal) ?: PdfQuality.HIGH,
             autoOcr = autoOcr,
-            themeMode = ThemeMode.entries.getOrNull(themeOrdinal) ?: ThemeMode.SYSTEM
+            themeMode = ThemeMode.entries.getOrNull(themeOrdinal) ?: ThemeMode.SYSTEM,
+            ocrLanguage = OcrLanguage.entries.getOrNull(langOrdinal) ?: OcrLanguage.LATIN,
+            isBiometricLockEnabled = bioLock
         )
     }
 
@@ -76,5 +92,15 @@ class ScannerPreferences(context: Context) {
     fun setThemeMode(mode: ThemeMode) {
         prefs.edit().putInt(KEY_THEME_MODE, mode.ordinal).apply()
         _settings.value = _settings.value.copy(themeMode = mode)
+    }
+
+    fun setOcrLanguage(language: OcrLanguage) {
+        prefs.edit().putInt(KEY_OCR_LANGUAGE, language.ordinal).apply()
+        _settings.value = _settings.value.copy(ocrLanguage = language)
+    }
+
+    fun setBiometricLockEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_BIOMETRIC_LOCK, enabled).apply()
+        _settings.value = _settings.value.copy(isBiometricLockEnabled = enabled)
     }
 }

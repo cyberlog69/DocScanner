@@ -67,6 +67,26 @@ class DocumentDetailViewModel(
         }
     }
 
+    fun addTag(rawTag: String) {
+        val currentDoc = _state.value.document ?: return
+        val cleanTag = rawTag.trim().removePrefix("#").trim()
+        if (cleanTag.isEmpty() || currentDoc.tags.contains(cleanTag)) return
+        val updatedTags = currentDoc.tags + cleanTag
+        viewModelScope.launch {
+            repository.updateTags(documentId, updatedTags)
+            loadDocument()
+        }
+    }
+
+    fun removeTag(tag: String) {
+        val currentDoc = _state.value.document ?: return
+        val updatedTags = currentDoc.tags.filterNot { it.equals(tag, ignoreCase = true) }
+        viewModelScope.launch {
+            repository.updateTags(documentId, updatedTags)
+            loadDocument()
+        }
+    }
+
     fun deleteDocument(onComplete: () -> Unit) {
         viewModelScope.launch {
             _state.value.document?.let { doc ->

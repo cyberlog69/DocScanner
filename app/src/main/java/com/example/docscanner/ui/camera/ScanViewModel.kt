@@ -1,10 +1,12 @@
 package com.example.docscanner.ui.camera
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.docscanner.data.model.CategoryClassifier
 import com.example.docscanner.data.model.Document
 import com.example.docscanner.data.model.DocumentCategory
 import com.example.docscanner.data.model.Page
@@ -28,13 +30,28 @@ class ScanViewModel(
     private val ocrService: OcrService,
     private val fileStorageService: FileStorageService,
     private val pdfGenerator: PdfGenerator,
-    private val preferences: ScannerPreferences
+    private val preferences: ScannerPreferences,
+    private val context: Context
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ScanState())
     val state: StateFlow<ScanState> = _state.asStateFlow()
 
-    /** Called when ML Kit Document Scanner returns page URIs */
+    private fun decodeBitmapFromUri(uri: Uri): Bitmap? {
+        return try {
+            if (uri.scheme == "content") {
+                context.contentResolver.openInputStream(uri)?.use { stream ->
+                    BitmapFactory.decodeStream(stream)
+                }
+            } else {
+                uri.path?.let { BitmapFactory.decodeFile(it) }
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** Called when ML Kit Document Scanner or Gallery Picker returns page URIs */
     fun onScanComplete(pageUris: List<Uri>, existingDocumentId: String? = null) {
         viewModelScope.launch(Dispatchers.IO) {
             val settings = preferences.settings.value
@@ -48,9 +65,7 @@ class ScanViewModel(
 
             try {
                 val documentId = existingDocumentId ?: UUID.randomUUID().toString()
-                val bitmaps = pageUris.mapNotNull { uri ->
-                    uri.path?.let { BitmapFactory.decodeFile(it) }
-                }
+                val bitmaps = pageUris.mapNotNull { uri -> decodeBitmapFromUri(uri) }
 
                 if (bitmaps.isEmpty()) {
                     _state.update { it.copy(isProcessing = false, error = "No pages found") }
@@ -65,15 +80,18 @@ class ScanViewModel(
                     fileStorageService.savePageImage(bitmap, documentId, index, quality = imageQuality)
                 }
 
-                // Run OCR on each page (if auto OCR is enabled)
+                // Run OCR on each page using selected OCR Language (if auto OCR is enabled)
                 val ocrResults = if (settings.autoOcr) {
-                    _state.update { it.copy(processingStep = "Running AI OCR on ${bitmaps.size} pages...") }
-                    bitmaps.map { bitmap -> ocrService.recognizeText(bitmap) }
+                    _state.update { it.copy(processingStep = "Running AI OCR on ${bitmaps.size} pages (${settings.ocrLanguage.displayName})...") }
+                    bitmaps.map { bitmap -> ocrService.recognizeText(bitmap, settings.ocrLanguage) }
                 } else {
                     emptyList()
                 }
 
                 val fullText = ocrResults.joinToString("\n\n--- Page Break ---\n\n") { it.fullText }
+
+                // Smart auto-categorize based on OCR text
+                val detectedCategory = CategoryClassifier.classify(fullText)
 
                 // Generate Searchable PDF using configured PDF Quality profile (e.g. UHD / High / Standard)
                 _state.update { it.copy(processingStep = "Generating ${settings.pdfQuality.badge} PDF...") }
@@ -91,7 +109,7 @@ class ScanViewModel(
                 val document = Document(
                     id = documentId,
                     title = generateTitle(ocrResults.firstOrNull()?.fullText),
-                    category = DocumentCategory.OTHER,
+                    category = detectedCategory,
                     pageCount = bitmaps.size,
                     thumbnailPath = thumbnailPath,
                     pdfPath = pdfPath,

@@ -45,13 +45,6 @@ class DocumentListViewModel(
     private val _selectedDocIds = MutableStateFlow<Set<String>>(emptySet())
     val selectedDocIds: StateFlow<Set<String>> = _selectedDocIds.asStateFlow()
 
-    private val _totalStorageBytes = MutableStateFlow(0L)
-    val totalStorageBytes: StateFlow<Long> = _totalStorageBytes.asStateFlow()
-
-    init {
-        refreshStorageStats()
-    }
-
     val documents: StateFlow<List<Document>> = combine(
         _selectedCategory,
         _searchQuery.debounce(300)
@@ -64,10 +57,17 @@ class DocumentListViewModel(
             }
         }
         .combine(_sortOrder) { docs, sort ->
-            refreshStorageStats()
             docs.applySort(sort)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val totalStorageBytes: StateFlow<Long> = documents
+        .map {
+            withContext(Dispatchers.IO) {
+                fileStorageService.getTotalStorageUsed()
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
 
     fun setCategory(category: DocumentCategory) = _selectedCategory.update { category }
 
@@ -89,7 +89,6 @@ class DocumentListViewModel(
         viewModelScope.launch {
             fileStorageService.deleteDocumentFiles(document.id)
             repository.deleteDocument(document)
-            refreshStorageStats()
         }
     }
 
@@ -121,7 +120,6 @@ class DocumentListViewModel(
                 repository.deleteDocument(doc)
             }
             clearSelection()
-            refreshStorageStats()
         }
     }
 
@@ -142,13 +140,6 @@ class DocumentListViewModel(
                 repository.togglePin(id, pin)
             }
             clearSelection()
-        }
-    }
-
-    private fun refreshStorageStats() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val total = fileStorageService.getTotalStorageUsed()
-            _totalStorageBytes.value = total
         }
     }
 }

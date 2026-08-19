@@ -1,6 +1,10 @@
 package com.example.docscanner.ui.documents
 
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -29,16 +33,17 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material.icons.filled.Label
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
@@ -60,6 +65,8 @@ import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SearchBarDefaults
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -96,6 +103,7 @@ import java.util.Locale
 fun DocumentListScreen(
     onNavigateToDocument: (String) -> Unit,
     onStartScan: () -> Unit,
+    onImportGallery: (List<Uri>) -> Unit = {},
     viewModel: DocumentListViewModel,
     preferences: ScannerPreferences
 ) {
@@ -108,6 +116,14 @@ fun DocumentListScreen(
     val totalStorageBytes by viewModel.totalStorageBytes.collectAsStateWithLifecycle()
 
     val isSelectionMode = selectedDocIds.isNotEmpty()
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            onImportGallery(uris)
+        }
+    }
 
     var showSettingsDialog by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
@@ -157,7 +173,7 @@ fun DocumentListScreen(
                             Icon(Icons.Default.PushPin, contentDescription = "Pin selected")
                         }
                         IconButton(onClick = { showBatchCategoryDialog = true }) {
-                            Icon(Icons.Default.Label, contentDescription = "Change category")
+                            Icon(Icons.AutoMirrored.Filled.Label, contentDescription = "Change category")
                         }
                         IconButton(onClick = { showBatchDeleteDialog = true }) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete selected", tint = MaterialTheme.colorScheme.error)
@@ -213,6 +229,14 @@ fun DocumentListScreen(
                             }
                         }
 
+                        // Import from gallery
+                        IconButton(onClick = { galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
+                            Icon(
+                                imageVector = Icons.Default.AddPhotoAlternate,
+                                contentDescription = "Import from Gallery"
+                            )
+                        }
+
                         // View mode toggle
                         IconButton(onClick = { viewModel.toggleViewMode() }) {
                             Icon(
@@ -235,11 +259,24 @@ fun DocumentListScreen(
         },
         floatingActionButton = {
             if (!isSelectionMode) {
-                FloatingActionButton(
-                    onClick = onStartScan,
-                    containerColor = MaterialTheme.colorScheme.primary
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "Scan document")
+                    SmallFloatingActionButton(
+                        onClick = { galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    ) {
+                        Icon(Icons.Default.AddPhotoAlternate, contentDescription = "Import from Gallery", modifier = Modifier.size(20.dp))
+                    }
+
+                    FloatingActionButton(
+                        onClick = onStartScan,
+                        containerColor = MaterialTheme.colorScheme.primary
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Scan document")
+                    }
                 }
             }
         }
@@ -252,23 +289,29 @@ fun DocumentListScreen(
             // Search bar (only when not in selection mode)
             if (!isSelectionMode) {
                 DockedSearchBar(
+                    inputField = {
+                        SearchBarDefaults.InputField(
+                            query = searchQuery,
+                            onQueryChange = viewModel::setSearchQuery,
+                            onSearch = {},
+                            expanded = false,
+                            onExpandedChange = {},
+                            placeholder = { Text("Search documents...") },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                            trailingIcon = {
+                                if (searchQuery.isNotBlank()) {
+                                    IconButton(onClick = { viewModel.setSearchQuery("") }) {
+                                        Icon(Icons.Default.Close, contentDescription = "Clear search")
+                                    }
+                                }
+                            }
+                        )
+                    },
+                    expanded = false,
+                    onExpandedChange = {},
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    query = searchQuery,
-                    onQueryChange = viewModel::setSearchQuery,
-                    onSearch = {},
-                    active = false,
-                    onActiveChange = {},
-                    placeholder = { Text("Search documents...") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    trailingIcon = {
-                        if (searchQuery.isNotBlank()) {
-                            IconButton(onClick = { viewModel.setSearchQuery("") }) {
-                                Icon(Icons.Default.Close, contentDescription = "Clear search")
-                            }
-                        }
-                    }
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
                 ) {}
             }
 
@@ -623,6 +666,22 @@ private fun DocumentGridCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+                if (document.tags.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(vertical = 2.dp)
+                    ) {
+                        document.tags.take(2).forEach { tag ->
+                            Text(
+                                text = "#$tag",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = formatDate(document.createdAt),
@@ -749,6 +808,21 @@ private fun DocumentListCard(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                     )
+                }
+                if (document.tags.isNotEmpty()) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(top = 2.dp)
+                    ) {
+                        document.tags.take(3).forEach { tag ->
+                            Text(
+                                text = "#$tag",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.secondary,
+                                maxLines = 1
+                            )
+                        }
+                    }
                 }
                 Text(
                     text = formatDate(document.createdAt),

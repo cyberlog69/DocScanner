@@ -18,7 +18,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
 
     companion object {
         const val DATABASE_NAME = "docscanner.db"
-        const val DATABASE_VERSION = 3   // v2→v3: added isPinned column
+        const val DATABASE_VERSION = 4   // v3→v4: added tags column and FTS tags indexing
 
         const val TABLE_DOCUMENTS = "documents"
         const val TABLE_PAGES = "pages"
@@ -51,7 +51,8 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                 thumbnailPath TEXT NOT NULL,
                 pdfPath TEXT NOT NULL,
                 extractedText TEXT NOT NULL,
-                isPinned INTEGER NOT NULL DEFAULT 0
+                isPinned INTEGER NOT NULL DEFAULT 0,
+                tags TEXT NOT NULL DEFAULT ''
             )
             """.trimIndent()
         )
@@ -82,7 +83,8 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
             CREATE VIRTUAL TABLE IF NOT EXISTS $TABLE_DOCUMENTS_FTS USING fts4(
                 content="$TABLE_DOCUMENTS",
                 title,
-                extractedText
+                extractedText,
+                tags
             )
             """.trimIndent()
         )
@@ -105,7 +107,8 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                     thumbnailPath TEXT NOT NULL,
                     pdfPath TEXT NOT NULL,
                     extractedText TEXT NOT NULL,
-                    isPinned INTEGER NOT NULL DEFAULT 0
+                    isPinned INTEGER NOT NULL DEFAULT 0,
+                    tags TEXT NOT NULL DEFAULT ''
                 )
                 """.trimIndent()
             )
@@ -118,8 +121,8 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                     db.execSQL(
                         """
                         INSERT INTO documents_v2 (id, title, category, createdAt, modifiedAt,
-                            pageCount, thumbnailPath, pdfPath, extractedText, isPinned)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                            pageCount, thumbnailPath, pdfPath, extractedText, isPinned, tags)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '')
                         """.trimIndent(),
                         arrayOf(
                             c.getString(c.getColumnIndexOrThrow("id")),
@@ -144,19 +147,68 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                 CREATE VIRTUAL TABLE IF NOT EXISTS $TABLE_DOCUMENTS_FTS USING fts4(
                     content="$TABLE_DOCUMENTS",
                     title,
-                    extractedText
+                    extractedText,
+                    tags
                 )
                 """.trimIndent()
             )
-            db.execSQL("INSERT INTO $TABLE_DOCUMENTS_FTS(docid, title, extractedText) SELECT rowid, title, extractedText FROM $TABLE_DOCUMENTS")
+            db.execSQL("INSERT INTO $TABLE_DOCUMENTS_FTS(docid, title, extractedText, tags) SELECT rowid, title, extractedText, '' FROM $TABLE_DOCUMENTS")
 
             version = 2
         }
 
-        // v2 → v3: Add isPinned column
+        // v2 → v3: Add isPinned column safely
         if (version < 3) {
-            db.execSQL("ALTER TABLE $TABLE_DOCUMENTS ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0")
+            try {
+                val cursor = db.rawQuery("PRAGMA table_info($TABLE_DOCUMENTS)", null)
+                var hasIsPinned = false
+                cursor.use { c ->
+                    val nameIdx = c.getColumnIndex("name")
+                    while (c.moveToNext()) {
+                        if (nameIdx >= 0 && c.getString(nameIdx) == "isPinned") {
+                            hasIsPinned = true
+                            break
+                        }
+                    }
+                }
+                if (!hasIsPinned) {
+                    db.execSQL("ALTER TABLE $TABLE_DOCUMENTS ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0")
+                }
+            } catch (_: Exception) {}
             version = 3
+        }
+
+        // v3 → v4: Add tags column safely and update FTS
+        if (version < 4) {
+            try {
+                val cursor = db.rawQuery("PRAGMA table_info($TABLE_DOCUMENTS)", null)
+                var hasTags = false
+                cursor.use { c ->
+                    val nameIdx = c.getColumnIndex("name")
+                    while (c.moveToNext()) {
+                        if (nameIdx >= 0 && c.getString(nameIdx) == "tags") {
+                            hasTags = true
+                            break
+                        }
+                    }
+                }
+                if (!hasTags) {
+                    db.execSQL("ALTER TABLE $TABLE_DOCUMENTS ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
+                }
+                db.execSQL("DROP TABLE IF EXISTS $TABLE_DOCUMENTS_FTS")
+                db.execSQL(
+                    """
+                    CREATE VIRTUAL TABLE IF NOT EXISTS $TABLE_DOCUMENTS_FTS USING fts4(
+                        content="$TABLE_DOCUMENTS",
+                        title,
+                        extractedText,
+                        tags
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("INSERT INTO $TABLE_DOCUMENTS_FTS(docid, title, extractedText, tags) SELECT rowid, title, extractedText, tags FROM $TABLE_DOCUMENTS")
+            } catch (_: Exception) {}
+            version = 4
         }
     }
 
@@ -174,9 +226,10 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
             put("pdfPath", document.pdfPath)
             put("extractedText", document.extractedText)
             put("isPinned", if (document.isPinned) 1 else 0)
+            put("tags", document.tagsToDbString())
         }
         writableDatabase.insertWithOnConflict(TABLE_DOCUMENTS, null, values, SQLiteDatabase.CONFLICT_REPLACE)
-        updateFts(document.id, document.title, document.extractedText)
+        updateFts(document.id, document.title, document.extractedText, document.tagsToDbString())
         notifyChanged()
     }
 
@@ -190,9 +243,10 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
             put("pdfPath", document.pdfPath)
             put("extractedText", document.extractedText)
             put("isPinned", if (document.isPinned) 1 else 0)
+            put("tags", document.tagsToDbString())
         }
         writableDatabase.update(TABLE_DOCUMENTS, values, "id = ?", arrayOf(document.id))
-        updateFts(document.id, document.title, document.extractedText)
+        updateFts(document.id, document.title, document.extractedText, document.tagsToDbString())
         notifyChanged()
     }
 
@@ -257,6 +311,20 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         notifyChanged()
     }
 
+    override suspend fun updateTags(id: String, tags: List<String>, now: Long): Unit = withContext(Dispatchers.IO) {
+        val tagsString = tags.joinToString(",") { it.trim() }
+        val values = ContentValues().apply {
+            put("tags", tagsString)
+            put("modifiedAt", now)
+        }
+        writableDatabase.update(TABLE_DOCUMENTS, values, "id = ?", arrayOf(id))
+        val doc = getDocumentById(id)
+        if (doc != null) {
+            updateFts(id, doc.title, doc.extractedText, tagsString)
+        }
+        notifyChanged()
+    }
+
     override suspend fun updateDocumentMeta(
         id: String,
         count: Int,
@@ -275,7 +343,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         writableDatabase.update(TABLE_DOCUMENTS, values, "id = ?", arrayOf(id))
         val doc = getDocumentById(id)
         if (doc != null) {
-            updateFts(id, doc.title, text)
+            updateFts(id, doc.title, text, doc.tagsToDbString())
         }
         notifyChanged()
     }
@@ -370,7 +438,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
 
     // ── Helper Queries ────────────────────────────────────────────────────────
 
-    private fun updateFts(docId: String, title: String, text: String) {
+    private fun updateFts(docId: String, title: String, text: String, tags: String = "") {
         try {
             val cursor = readableDatabase.rawQuery("SELECT rowid FROM $TABLE_DOCUMENTS WHERE id = ?", arrayOf(docId))
             if (cursor.moveToFirst()) {
@@ -379,6 +447,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                     put("docid", rowId)
                     put("title", title)
                     put("extractedText", text)
+                    put("tags", tags)
                 }
                 writableDatabase.insertWithOnConflict(TABLE_DOCUMENTS_FTS, null, values, SQLiteDatabase.CONFLICT_REPLACE)
             }
@@ -400,9 +469,11 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
             val pdfPathIdx = c.getColumnIndexOrThrow("pdfPath")
             val extractedTextIdx = c.getColumnIndexOrThrow("extractedText")
             val isPinnedIdx = c.getColumnIndex("isPinned")
+            val tagsIdx = c.getColumnIndex("tags")
 
             while (c.moveToNext()) {
                 val isPinned = if (isPinnedIdx >= 0) c.getInt(isPinnedIdx) == 1 else false
+                val tags = if (tagsIdx >= 0) Document.parseTagsString(c.getString(tagsIdx)) else emptyList()
                 list.add(
                     Document(
                         id = c.getString(idIdx),
@@ -414,7 +485,8 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                         thumbnailPath = c.getString(thumbnailPathIdx),
                         pdfPath = c.getString(pdfPathIdx),
                         extractedText = c.getString(extractedTextIdx),
-                        isPinned = isPinned
+                        isPinned = isPinned,
+                        tags = tags
                     )
                 )
             }

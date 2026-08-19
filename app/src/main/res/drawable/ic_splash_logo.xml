@@ -1,58 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
+    android:width="128dp"
+    android:height="128dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Document Drop Shadow -->
-    <path
-        android:pathData="M37,31 h34 a4,4 0 0 1 4,4 v42 a4,4 0 0 1 -4,4 h-34 a4,4 0 0 1 -4,-4 v-42 a4,4 0 0 1 4,-4 z"
-        android:fillColor="#33000000" />
-
-    <!-- Document Paper Base Sheet (White Material Card) -->
+    <!-- Document Base Sheet (Card) -->
     <path
         android:pathData="M35,29 h34 a4,4 0 0 1 4,4 v42 a4,4 0 0 1 -4,4 h-34 a4,4 0 0 1 -4,-4 v-42 a4,4 0 0 1 4,-4 z"
+        android:fillColor="#1565C0" />
+
+    <!-- Document Paper Sheet Inside (White) -->
+    <path
+        android:pathData="M38,32 h28 a2,2 0 0 1 2,2 v36 a2,2 0 0 1 -2,2 h-28 a2,2 0 0 1 -2,-2 v-36 a2,2 0 0 1 2,-2 z"
         android:fillColor="#FFFFFF" />
 
-    <!-- Folded Top-Right Corner Accent -->
+    <!-- Top-Right Fold Accent -->
     <path
-        android:pathData="M65,29 h4 a4,4 0 0 1 4,4 v4 z"
-        android:fillColor="#CFD8DC" />
+        android:pathData="M62,32 h4 a2,2 0 0 1 2,2 v4 z"
+        android:fillColor="#BBDEFB" />
 
-    <!-- Document Header Accent Bar (Primary Blue) -->
+    <!-- Document Header Accent Bar -->
     <path
-        android:pathData="M40,38 L55,38"
-        android:strokeWidth="3.0"
+        android:pathData="M43,40 L56,40"
+        android:strokeWidth="2.8"
         android:strokeColor="#1976D2"
         android:strokeLineCap="round" />
 
     <!-- Document Content Lines -->
     <path
-        android:pathData="M40,46 L64,46"
-        android:strokeWidth="2.2"
-        android:strokeColor="#78909C"
-        android:strokeLineCap="round" />
-
-    <path
-        android:pathData="M40,52 L60,52"
-        android:strokeWidth="2.2"
+        android:pathData="M43,47 L63,47 M43,53 L59,53 M43,59 L54,59"
+        android:strokeWidth="2.0"
         android:strokeColor="#90A4AE"
         android:strokeLineCap="round" />
 
-    <path
-        android:pathData="M40,58 L54,58"
-        android:strokeWidth="2.2"
-        android:strokeColor="#B0BEC5"
-        android:strokeLineCap="round" />
-
-    <path
-        android:pathData="M40,64 L48,64"
-        android:strokeWidth="2.2"
-        android:strokeColor="#CFD8DC"
-        android:strokeLineCap="round" />
-
-    <!-- Scanner Viewfinder Brackets (Vibrant Cyan #00E5FF) -->
+    <!-- Scanner Viewfinder Corners (Cyan / Electric Blue) -->
     <!-- Top-Left Corner -->
     <path
         android:pathData="M26,38 L26,27 A3,3 0 0 1 29,24 L40,24"
@@ -85,7 +67,7 @@
         android:strokeLineCap="round"
         android:strokeLineJoin="round" />
 
-    <!-- Active Laser Scan Beam Bar (Cyan / White Pulse) -->
+    <!-- Active Laser Scan Beam Bar -->
     <path
         android:pathData="M28,54 L80,54"
         android:strokeWidth="2.5"
@@ -94,7 +76,7 @@
 
     <path
         android:pathData="M46,54 L62,54"
-        android:strokeWidth="3.0"
+        android:strokeWidth="3.2"
         android:strokeColor="#FFFFFF"
         android:strokeLineCap="round" />
 

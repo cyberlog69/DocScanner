@@ -17,7 +17,8 @@ object AppViewModelProvider {
                 ocrService = app.container.ocrService,
                 fileStorageService = app.container.fileStorageService,
                 pdfGenerator = app.container.pdfGenerator,
-                preferences = app.container.preferences
+                preferences = app.container.preferences,
+                context = app.container.context
             )
         }
         initializer {

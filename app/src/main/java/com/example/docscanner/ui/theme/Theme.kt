@@ -89,8 +89,10 @@ fun DocScannerTheme(
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
-            val window = (view.context as Activity).window
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+            val activity = view.context.findActivity()
+            activity?.window?.let { window ->
+                WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+            }
         }
     }
 
@@ -99,4 +101,10 @@ fun DocScannerTheme(
         typography = DocScannerTypography,
         content = content
     )
+}
+
+private tailrec fun android.content.Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is android.content.ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

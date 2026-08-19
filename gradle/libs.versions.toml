@@ -1,6 +1,7 @@
 [versions]
 androidGradlePlugin = "9.0.1"
 androidxCore = "1.18.0"
+coreSplashScreen = "1.0.1"
 androidxLifecycle = "2.10.0"
 androidxActivity = "1.13.0"
 androidxComposeBom = "2026.03.01"
@@ -30,7 +31,9 @@ kotlinxSerialization = "1.8.0"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidxCore" }
+androidx-core-splashscreen = { module = "androidx.core:core-splashscreen", version.ref = "coreSplashScreen" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidxActivity" }
+androidx-fragment-ktx = { module = "androidx.fragment:fragment-ktx", version = "1.8.6" }
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "androidxComposeBom" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
@@ -49,6 +52,7 @@ androidx-test-runner = { module = "androidx.test:runner", version.ref = "android
 junit = { module = "junit:junit", version.ref = "junit" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigationCompose" }
+androidx-biometric = { module = "androidx.biometric:biometric", version = "1.2.0-alpha05" }
 
 # CameraX
 camera-core = { module = "androidx.camera:camera-core", version.ref = "camerax" }
@@ -57,8 +61,12 @@ camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = 
 camera-view = { module = "androidx.camera:camera-view", version.ref = "camerax" }
 camera-extensions = { module = "androidx.camera:camera-extensions", version.ref = "camerax" }
 
-# ML Kit (bundled - fully offline)
+# ML Kit (bundled - fully offline multi-language)
 mlkit-text-recognition = { module = "com.google.mlkit:text-recognition", version.ref = "mlkitTextRecognition" }
+mlkit-text-recognition-devanagari = { module = "com.google.mlkit:text-recognition-devanagari", version.ref = "mlkitTextRecognition" }
+mlkit-text-recognition-chinese = { module = "com.google.mlkit:text-recognition-chinese", version.ref = "mlkitTextRecognition" }
+mlkit-text-recognition-japanese = { module = "com.google.mlkit:text-recognition-japanese", version.ref = "mlkitTextRecognition" }
+mlkit-text-recognition-korean = { module = "com.google.mlkit:text-recognition-korean", version.ref = "mlkitTextRecognition" }
 mlkit-document-scanner = { module = "com.google.android.gms:play-services-mlkit-document-scanner", version.ref = "mlkitDocumentScanner" }
 
 

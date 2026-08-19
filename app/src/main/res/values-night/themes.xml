@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <!-- Starting Theme (Splash Screen) -->
+    <!-- Starting Theme (Splash Screen for Dark Mode) -->
     <style name="Theme.App.Starting" parent="Theme.SplashScreen">
-        <!-- Light splash background matching Material 3 light surface -->
-        <item name="windowSplashScreenBackground">#F8F9FA</item>
+        <!-- Dark splash background matching Material 3 dark surface (#111318) -->
+        <item name="windowSplashScreenBackground">#111318</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_logo</item>
         <item name="postSplashScreenTheme">@style/Theme.DocScanner</item>
     </style>
 
-    <!-- Main Application Theme (Light) -->
-    <style name="Theme.DocScanner" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:windowBackground">#F8F9FA</item>
+    <!-- Main Application Theme (Dark) -->
+    <style name="Theme.DocScanner" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#111318</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>

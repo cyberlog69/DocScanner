@@ -9,6 +9,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,9 +26,13 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.RotateRight
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteOutline
@@ -35,9 +41,10 @@ import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
@@ -52,6 +59,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -75,17 +83,19 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import android.widget.Toast
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.docscanner.data.model.DocumentCategory
 import com.example.docscanner.data.pref.PdfQuality
 import com.example.docscanner.service.FileStorageService
+import com.example.docscanner.ui.components.ZoomableImageDialog
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun DocumentDetailScreen(
     onNavigateBack: () -> Unit,
@@ -99,6 +109,8 @@ fun DocumentDetailScreen(
     var showRenameDialog by remember { mutableStateOf(false) }
     var showCategoryDialog by remember { mutableStateOf(false) }
     var showPdfQualityDialog by remember { mutableStateOf(false) }
+    var showAddTagDialog by remember { mutableStateOf(false) }
+    var zoomPagePath by remember { mutableStateOf<String?>(null) }
     var selectedPdfQuality by remember { mutableStateOf(PdfQuality.UHD_4K) }
     var selectedPageIndex by remember { mutableIntStateOf(0) }
 
@@ -269,7 +281,8 @@ fun DocumentDetailScreen(
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .aspectRatio(3f / 4f),
+                            .aspectRatio(3f / 4f)
+                            .clickable { zoomPagePath = currentPage.imagePath },
                         shape = RoundedCornerShape(16.dp),
                         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                     ) {
@@ -281,13 +294,40 @@ fun DocumentDetailScreen(
                                 contentScale = ContentScale.Fit
                             )
 
+                            // Pinch to zoom helper badge
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopStart)
+                                    .padding(12.dp)
+                                    .background(
+                                        MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                                        CircleShape
+                                    )
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.ZoomIn,
+                                        contentDescription = "Pinch to zoom",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Pinch to Zoom",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+
                             // Page indicator badge
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.TopEnd)
                                     .padding(12.dp)
                                     .background(
-                                        MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
+                                        MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
                                         CircleShape
                                     )
                                     .padding(horizontal = 10.dp, vertical = 4.dp)
@@ -346,7 +386,7 @@ fun DocumentDetailScreen(
                                 }
                             }
                         ) {
-                            Icon(Icons.Default.RotateRight, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Icon(Icons.AutoMirrored.Filled.RotateRight, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("Rotate 90°")
                         }
@@ -403,6 +443,69 @@ fun DocumentDetailScreen(
                     }
                 }
 
+                // Document Tags & Labels Card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Tags & Labels",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            AssistChip(
+                                onClick = { showAddTagDialog = true },
+                                label = { Text("Add Tag") },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                }
+                            )
+                        }
+
+                        val tags = doc?.tags ?: emptyList()
+                        if (tags.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                tags.forEach { tag ->
+                                    InputChip(
+                                        selected = false,
+                                        onClick = {},
+                                        label = { Text("#$tag") },
+                                        trailingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = "Remove tag",
+                                                modifier = Modifier
+                                                    .size(16.dp)
+                                                    .clickable { viewModel.removeTag(tag) }
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "No tags added yet. Tap 'Add Tag' to organize.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                }
+
                 // OCR Extracted Text Card
                 val currentExtractedText = pages.getOrNull(selectedPageIndex)?.extractedText
                     ?: doc?.extractedText ?: ""
@@ -420,31 +523,53 @@ fun DocumentDetailScreen(
                             Text(
                                 text = "Extracted Text (Page ${selectedPageIndex + 1})",
                                 style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f)
                             )
                             if (currentExtractedText.isNotBlank()) {
-                                IconButton(
-                                    onClick = {
-                                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                        val clip = android.content.ClipData.newPlainText("Scanned Text", currentExtractedText)
-                                        clipboard.setPrimaryClip(clip)
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    IconButton(
+                                        onClick = {
+                                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                            val clip = android.content.ClipData.newPlainText("Scanned Text", currentExtractedText)
+                                            clipboard.setPrimaryClip(clip)
+                                            Toast.makeText(context, "Text copied to clipboard", Toast.LENGTH_SHORT).show()
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ContentCopy,
+                                            contentDescription = "Copy all text",
+                                            modifier = Modifier.size(18.dp)
+                                        )
                                     }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Share,
-                                        contentDescription = "Copy text",
-                                        modifier = Modifier.size(18.dp)
-                                    )
+                                    IconButton(
+                                        onClick = {
+                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(Intent.EXTRA_SUBJECT, doc?.title ?: "Scanned Text")
+                                                putExtra(Intent.EXTRA_TEXT, currentExtractedText)
+                                            }
+                                            context.startActivity(Intent.createChooser(shareIntent, "Share Extracted Text"))
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Share,
+                                            contentDescription = "Share text",
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         if (currentExtractedText.isNotBlank()) {
-                            Text(
-                                text = currentExtractedText,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
+                            SelectionContainer {
+                                Text(
+                                    text = currentExtractedText,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
                         } else {
                             Text(
                                 text = "No text detected on this page.",
@@ -707,6 +832,50 @@ fun DocumentDetailScreen(
             dismissButton = {
                 TextButton(onClick = { showCategoryDialog = false }) { Text("Cancel") }
             }
+        )
+    }
+
+    // ── Add Tag Dialog ────────────────────────────────────────────────────────
+    if (showAddTagDialog) {
+        var tagInput by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showAddTagDialog = false },
+            title = { Text("Add Tag / Label") },
+            text = {
+                OutlinedTextField(
+                    value = tagInput,
+                    onValueChange = { tagInput = it },
+                    label = { Text("Tag Name (e.g. tax-2024, urgent)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (tagInput.isNotBlank()) {
+                            viewModel.addTag(tagInput)
+                            showAddTagDialog = false
+                        }
+                    }
+                ) {
+                    Text("Add")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddTagDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    // ── Fullscreen Zoomable Image Lightbox ────────────────────────────────────
+    if (zoomPagePath != null) {
+        ZoomableImageDialog(
+            imagePath = zoomPagePath!!,
+            title = doc?.title ?: "Page Preview",
+            pageIndex = selectedPageIndex,
+            pageCount = pages.size,
+            onDismiss = { zoomPagePath = null }
         )
     }
 }
