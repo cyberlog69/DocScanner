@@ -1,7 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
-    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -12,8 +11,8 @@ android {
         applicationId 'com.example.docscanner'
         minSdk 24
         targetSdk 36
-        versionCode 5
-        versionName '1.5.0-beta'
+        versionCode 6
+        versionName '1.6.0-beta'
     }
 
     buildTypes {
@@ -54,6 +53,7 @@ dependencies {
     // Lifecycle
     implementation libs.androidx.lifecycle.runtime.compose
     implementation libs.androidx.lifecycle.viewmodel.compose
+    implementation libs.androidx.lifecycle.process
 
     // Compose
     implementation libs.androidx.compose.ui
@@ -64,13 +64,6 @@ dependencies {
     // Navigation
     implementation libs.androidx.navigation.compose
 
-    // CameraX
-    implementation libs.camera.core
-    implementation libs.camera.camera2
-    implementation libs.camera.lifecycle
-    implementation libs.camera.view
-    implementation libs.camera.extensions
-
     // ML Kit (bundled multi-language OCR + Document Scanner)
     implementation libs.mlkit.text.recognition
     implementation libs.mlkit.text.recognition.devanagari
@@ -79,7 +72,6 @@ dependencies {
     implementation libs.mlkit.text.recognition.korean
     implementation libs.mlkit.document.scanner
 
-
     // Coil
     implementation libs.coil.compose
 
@@ -87,9 +79,8 @@ dependencies {
     implementation libs.itext.core
     implementation libs.itext.bouncy.castle
 
-    // Coroutines & Serialization
+    // Coroutines
     implementation libs.kotlinx.coroutines.android
-    implementation libs.kotlinx.serialization.json
 
     // Debug & Test
     debugImplementation libs.androidx.compose.ui.tooling

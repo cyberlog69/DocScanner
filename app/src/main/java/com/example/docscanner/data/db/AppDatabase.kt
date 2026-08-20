@@ -251,8 +251,9 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
     }
 
     override suspend fun deleteDocument(document: Document): Unit = withContext(Dispatchers.IO) {
-        writableDatabase.delete(TABLE_DOCUMENTS, "id = ?", arrayOf(document.id))
+        // Delete FTS rows first while the documents row still exists (docid subquery needs it).
         writableDatabase.delete(TABLE_DOCUMENTS_FTS, "docid IN (SELECT rowid FROM $TABLE_DOCUMENTS WHERE id = ?)", arrayOf(document.id))
+        writableDatabase.delete(TABLE_DOCUMENTS, "id = ?", arrayOf(document.id))
         notifyChanged()
     }
 
@@ -355,21 +356,30 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                 if (cleanQuery.isEmpty()) {
                     queryDocuments("SELECT * FROM $TABLE_DOCUMENTS ORDER BY isPinned DESC, createdAt DESC", null)
                 } else {
-                    // Build an FTS4 MATCH expression with prefix wildcard on each token.
-                    // e.g. "hello world" → "hello* world*" so partial words still match.
-                    val ftsQuery = cleanQuery
-                        .split(Regex("\\s+"))
-                        .filter { it.isNotEmpty() }
-                        .joinToString(" ") { "${it}*" }
-                    queryDocuments(
-                        """
-                        SELECT d.* FROM $TABLE_DOCUMENTS d
-                        INNER JOIN $TABLE_DOCUMENTS_FTS fts ON fts.docid = d.rowid
-                        WHERE $TABLE_DOCUMENTS_FTS MATCH ?
-                        ORDER BY d.isPinned DESC, d.createdAt DESC
-                        """.trimIndent(),
-                        arrayOf(ftsQuery)
-                    )
+                    try {
+                        // Build an FTS4 MATCH expression with a prefix wildcard on each quoted token.
+                        // Quoting tokens keeps special FTS characters (" - ( ) : ^ etc.) safe.
+                        val ftsQuery = buildFtsMatchQuery(cleanQuery)
+                        queryDocuments(
+                            """
+                            SELECT d.* FROM $TABLE_DOCUMENTS d
+                            INNER JOIN $TABLE_DOCUMENTS_FTS fts ON fts.docid = d.rowid
+                            WHERE $TABLE_DOCUMENTS_FTS MATCH ?
+                            ORDER BY d.isPinned DESC, d.createdAt DESC
+                            """.trimIndent(),
+                            arrayOf(ftsQuery)
+                        )
+                    } catch (_: Exception) {
+                        // Fallback to a safe LIKE search if FTS parsing fails for any reason.
+                        queryDocuments(
+                            """
+                            SELECT * FROM $TABLE_DOCUMENTS
+                            WHERE title LIKE ? OR extractedText LIKE ? OR tags LIKE ?
+                            ORDER BY isPinned DESC, createdAt DESC
+                            """.trimIndent(),
+                            arrayOf("%$cleanQuery%", "%$cleanQuery%", "%$cleanQuery%")
+                        )
+                    }
                 }
             }
         }
@@ -437,6 +447,20 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
     }
 
     // ── Helper Queries ────────────────────────────────────────────────────────
+
+    /**
+     * Builds a safe FTS4 MATCH expression from a user-supplied search query.
+     * Each whitespace-separated token is quoted (escaping embedded double-quotes) and
+     * given a prefix wildcard, e.g. `"tax"* "invoice"*` so partial words still match.
+     */
+    private fun buildFtsMatchQuery(query: String): String {
+        return query
+            .split(Regex("\\s+"))
+            .filter { it.isNotBlank() }
+            .joinToString(" ") { token ->
+                "\"${token.replace("\"", "\"\"")}\"*"
+            }
+    }
 
     private fun updateFts(docId: String, title: String, text: String, tags: String = "") {
         try {

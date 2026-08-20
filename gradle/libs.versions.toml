@@ -13,21 +13,15 @@ coroutines = "1.10.2"
 junit = "4.13.2"
 kotlin = "2.3.20"
 navigationCompose = "2.8.9"
-# Camera
-camerax = "1.4.2"
 # ML Kit - bundled (offline)
 mlkitTextRecognition = "16.0.1"
 mlkitDocumentScanner = "16.0.0-beta1"
-# Room
-room = "2.7.1"
 # Coil (image loading)
 coil = "2.7.0"
-# Coroutines
+# Kotlinx Coroutines
 kotlinxCoroutines = "1.10.2"
 # iText (PDF generation)
 itext = "8.0.5"
-# Kotlinx Serialization
-kotlinxSerialization = "1.8.0"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidxCore" }
@@ -45,6 +39,7 @@ androidx-compose-material-icons-extended = { group = "androidx.compose.material"
 androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "androidxLifecycle" }
 androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "androidxLifecycle" }
 androidx-lifecycle-runtime-ktx = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "androidxLifecycle" }
+androidx-lifecycle-process = { module = "androidx.lifecycle:lifecycle-process", version.ref = "androidxLifecycle" }
 androidx-test-core = { module = "androidx.test:core", version.ref = "androidxTest" }
 androidx-test-ext-junit = { module = "androidx.test.ext:junit", version.ref = "androidxTestExt" }
 androidx-test-espresso-core = { module = "androidx.test.espresso:espresso-core", version.ref = "androidxTestEspresso" }
@@ -52,14 +47,7 @@ androidx-test-runner = { module = "androidx.test:runner", version.ref = "android
 junit = { module = "junit:junit", version.ref = "junit" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigationCompose" }
-androidx-biometric = { module = "androidx.biometric:biometric", version = "1.2.0-alpha05" }
-
-# CameraX
-camera-core = { module = "androidx.camera:camera-core", version.ref = "camerax" }
-camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camerax" }
-camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camerax" }
-camera-view = { module = "androidx.camera:camera-view", version.ref = "camerax" }
-camera-extensions = { module = "androidx.camera:camera-extensions", version.ref = "camerax" }
+androidx-biometric = { module = "androidx.biometric:biometric", version = "1.1.0" }
 
 # ML Kit (bundled - fully offline multi-language)
 mlkit-text-recognition = { module = "com.google.mlkit:text-recognition", version.ref = "mlkitTextRecognition" }
@@ -68,7 +56,6 @@ mlkit-text-recognition-chinese = { module = "com.google.mlkit:text-recognition-c
 mlkit-text-recognition-japanese = { module = "com.google.mlkit:text-recognition-japanese", version.ref = "mlkitTextRecognition" }
 mlkit-text-recognition-korean = { module = "com.google.mlkit:text-recognition-korean", version.ref = "mlkitTextRecognition" }
 mlkit-document-scanner = { module = "com.google.android.gms:play-services-mlkit-document-scanner", version.ref = "mlkitDocumentScanner" }
-
 
 # Coil
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
@@ -79,10 +66,7 @@ itext-bouncy-castle = { module = "com.itextpdf:bouncy-castle-adapter", version.r
 
 # Kotlinx
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinxCoroutines" }
-kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "androidGradlePlugin" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
-kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
-kotlin-kapt = { id = "org.jetbrains.kotlin.kapt", version.ref = "kotlin" }

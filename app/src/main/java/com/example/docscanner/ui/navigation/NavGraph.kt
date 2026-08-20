@@ -28,8 +28,14 @@ import com.example.docscanner.ui.documents.DocumentListViewModel
 sealed class Screen(val route: String) {
     data object DocumentList : Screen("document_list")
     data object Scanner : Screen("scanner")
-    data object DocumentDetail : Screen("document_detail/{documentId}") {
-        fun createRoute(documentId: String) = "document_detail/$documentId"
+    data object DocumentDetail : Screen("document_detail/{documentId}?query={query}&rename={rename}") {
+        fun createRoute(documentId: String, query: String? = null, rename: Boolean = false): String {
+            val args = mutableListOf<String>()
+            query?.let { args += "query=$it" }
+            if (rename) args += "rename=true"
+            val queryString = if (args.isEmpty()) "" else "?${args.joinToString("&")}"
+            return "document_detail/$documentId$queryString"
+        }
     }
 }
 
@@ -51,7 +57,9 @@ fun DocScannerNavHost(
                     override fun <T : ViewModel> create(modelClass: Class<T>): T {
                         return DocumentListViewModel(
                             repository = appContainer.repository,
-                            fileStorageService = appContainer.fileStorageService
+                            fileStorageService = appContainer.fileStorageService,
+                            pdfGenerator = appContainer.pdfGenerator,
+                            preferences = appContainer.preferences
                         ) as T
                     }
                 }
@@ -75,15 +83,15 @@ fun DocScannerNavHost(
 
             LaunchedEffect(scanState.savedDocumentId) {
                 scanState.savedDocumentId?.let { id ->
-                    navController.navigate(Screen.DocumentDetail.createRoute(id))
+                    navController.navigate(Screen.DocumentDetail.createRoute(id, rename = true))
                     scanViewModel.resetState()
                 }
             }
 
             Box(modifier = Modifier.fillMaxSize()) {
                 DocumentListScreen(
-                    onNavigateToDocument = { id ->
-                        navController.navigate(Screen.DocumentDetail.createRoute(id))
+                    onNavigateToDocument = { id, query ->
+                        navController.navigate(Screen.DocumentDetail.createRoute(id, query = query))
                     },
                     onStartScan = {
                         navController.navigate(Screen.Scanner.route)
@@ -120,7 +128,7 @@ fun DocScannerNavHost(
             ScannerLaunchScreen(
                 scannerService = appContainer.documentScannerService,
                 onScanComplete = { documentId ->
-                    navController.navigate(Screen.DocumentDetail.createRoute(documentId)) {
+                    navController.navigate(Screen.DocumentDetail.createRoute(documentId, rename = true)) {
                         popUpTo(Screen.DocumentList.route)
                     }
                 },
@@ -133,19 +141,41 @@ fun DocScannerNavHost(
 
         composable(
             route = Screen.DocumentDetail.route,
-            arguments = listOf(navArgument("documentId") { type = NavType.StringType })
+            arguments = listOf(
+                navArgument("documentId") { type = NavType.StringType },
+                navArgument("query") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                    nullable = true
+                },
+                navArgument("rename") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                }
+            )
         ) { backStackEntry ->
             val documentId = backStackEntry.arguments?.getString("documentId") ?: ""
+            val searchQuery = backStackEntry.arguments?.getString("query").orEmpty()
+            val autoRename = backStackEntry.arguments?.getBoolean("rename") ?: false
             val detailViewModel: DocumentDetailViewModel = viewModel(
                 factory = DocumentDetailViewModel.provideFactory(
                     repository = appContainer.repository,
                     fileStorageService = appContainer.fileStorageService,
                     pdfGenerator = appContainer.pdfGenerator,
+                    ocrService = appContainer.ocrService,
+                    preferences = appContainer.preferences,
                     documentId = documentId
                 )
             )
             DocumentDetailScreen(
                 onNavigateBack = { navController.popBackStack() },
+                searchQuery = searchQuery,
+                autoRename = autoRename,
+                onOpenDocument = { newId ->
+                    navController.navigate(Screen.DocumentDetail.createRoute(newId)) {
+                        popUpTo(Screen.DocumentList.route)
+                    }
+                },
                 viewModel = detailViewModel
             )
         }

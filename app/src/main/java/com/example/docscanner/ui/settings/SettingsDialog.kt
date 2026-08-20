@@ -475,7 +475,7 @@ fun SettingsDialog(
 
             // ── Footer ──────────────────────────────────────────────────────
             Text(
-                text = "DocScanner v1.5.0 • 100% Offline AI Workstation",
+                text = "DocScanner ${com.example.docscanner.BuildConfig.VERSION_NAME} • 100% Offline AI Workstation",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 modifier = Modifier.fillMaxWidth(),

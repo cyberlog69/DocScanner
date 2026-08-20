@@ -5,6 +5,7 @@ import com.example.docscanner.data.pref.PdfQuality
 import com.itextpdf.io.image.ImageDataFactory
 import com.itextpdf.kernel.geom.PageSize
 import com.itextpdf.kernel.pdf.PdfDocument
+import com.itextpdf.kernel.pdf.PdfPage
 import com.itextpdf.kernel.pdf.PdfWriter
 import com.itextpdf.kernel.pdf.canvas.PdfCanvas
 import com.itextpdf.layout.Document
@@ -32,11 +33,13 @@ class PdfGenerator {
             val pdfWriter = PdfWriter(outputStream)
             val pdfDoc = PdfDocument(pdfWriter)
             pdfDoc.documentInfo.title = title
+            val document = Document(pdfDoc)
 
             pages.forEachIndexed { index, pageData ->
-                addPageToPdf(pdfDoc, pageData, index, quality)
+                addPageToPdf(document, pdfDoc, pageData, index, quality)
             }
 
+            document.close()
             pdfDoc.close()
         } catch (e: Exception) {
             // Fallback: create basic PDF with just images
@@ -47,6 +50,7 @@ class PdfGenerator {
     }
 
     private fun addPageToPdf(
+        document: Document,
         pdfDoc: PdfDocument,
         pageData: PageData,
         pageIndex: Int,
@@ -61,30 +65,29 @@ class PdfGenerator {
 
         val pageSize = PageSize(pageWidth, pageHeight)
         val page = pdfDoc.addNewPage(pageSize)
-        val canvas = PdfCanvas(page)
 
         // Add high-resolution image layer with quality profile
         val bitmapBytes = bitmapToBytes(bitmap, quality)
         val imageData = ImageDataFactory.create(bitmapBytes)
         val pdfImage = Image(imageData)
-            .setFixedPosition(0f, 0f)
             .scaleToFit(pageWidth, pageHeight)
-        val document = Document(pdfDoc)
+            .setFixedPosition(pdfDoc.getPageNumber(page), 0f, 0f)
         document.add(pdfImage)
 
         // Add invisible text layer for searchability
         if (pageData.extractedText.isNotBlank()) {
-            addInvisibleTextLayer(canvas, pageData, pageWidth, pageHeight)
+            addInvisibleTextLayer(page, pageData, pageWidth, pageHeight)
         }
     }
 
     private fun addInvisibleTextLayer(
-        canvas: PdfCanvas,
+        page: PdfPage,
         pageData: PageData,
         pageWidth: Float,
         pageHeight: Float
     ) {
         try {
+            val canvas = PdfCanvas(page)
             canvas.beginText()
             canvas.setTextRenderingMode(3) // Invisible rendering mode
             canvas.setFontAndSize(

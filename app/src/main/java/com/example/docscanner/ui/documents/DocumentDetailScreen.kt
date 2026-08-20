@@ -56,7 +56,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
@@ -70,6 +69,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -80,8 +80,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import android.widget.Toast
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -99,7 +103,10 @@ import java.util.Locale
 @Composable
 fun DocumentDetailScreen(
     onNavigateBack: () -> Unit,
-    viewModel: DocumentDetailViewModel
+    viewModel: DocumentDetailViewModel,
+    searchQuery: String = "",
+    autoRename: Boolean = false,
+    onOpenDocument: (String) -> Unit = {}
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -110,9 +117,15 @@ fun DocumentDetailScreen(
     var showCategoryDialog by remember { mutableStateOf(false) }
     var showPdfQualityDialog by remember { mutableStateOf(false) }
     var showAddTagDialog by remember { mutableStateOf(false) }
+    var showSplitDialog by remember { mutableStateOf(false) }
     var zoomPagePath by remember { mutableStateOf<String?>(null) }
     var selectedPdfQuality by remember { mutableStateOf(PdfQuality.UHD_4K) }
     var selectedPageIndex by remember { mutableIntStateOf(0) }
+
+    // Automatically surface the rename dialog right after a fresh scan/import.
+    LaunchedEffect(Unit) {
+        if (autoRename) showRenameDialog = true
+    }
 
     val doc = state.document
     val pages = state.pages
@@ -199,6 +212,33 @@ fun DocumentDetailScreen(
                             text = { Text("Change Category") },
                             leadingIcon = { Text("🏷️") },
                             onClick = { showMenu = false; showCategoryDialog = true }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Retry OCR (this page)") },
+                            leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
+                            enabled = pages.getOrNull(selectedPageIndex) != null && !state.isOcrRunning,
+                            onClick = {
+                                showMenu = false
+                                pages.getOrNull(selectedPageIndex)?.let { viewModel.rerunOcrOnPage(it) }
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Retry OCR (all pages)") },
+                            leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
+                            enabled = pages.isNotEmpty() && !state.isOcrRunning,
+                            onClick = {
+                                showMenu = false
+                                viewModel.rerunOcrAll()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Split document at page ${selectedPageIndex + 1}") },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.RotateRight, null) },
+                            enabled = pages.size >= 2 && selectedPageIndex >= 1,
+                            onClick = {
+                                showMenu = false
+                                showSplitDialog = true
+                            }
                         )
                         DropdownMenuItem(
                             text = { Text("Delete Document") },
@@ -565,7 +605,11 @@ fun DocumentDetailScreen(
                         if (currentExtractedText.isNotBlank()) {
                             SelectionContainer {
                                 Text(
-                                    text = currentExtractedText,
+                                    text = if (searchQuery.isNotBlank()) {
+                                        highlightSearchMatches(currentExtractedText, searchQuery)
+                                    } else {
+                                        AnnotatedString(currentExtractedText)
+                                    },
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
@@ -575,6 +619,38 @@ fun DocumentDetailScreen(
                                 text = "No text detected on this page.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // OCR re-run progress overlay
+            AnimatedVisibility(
+                visible = state.isOcrRunning,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.5f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Card(
+                        modifier = Modifier.padding(32.dp),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            CircularProgressIndicator()
+                            Text(
+                                text = state.ocrProgressText.ifEmpty { "Running OCR..." },
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
                             )
                         }
                     }
@@ -777,6 +853,38 @@ fun DocumentDetailScreen(
         )
     }
 
+    // ── Split Document Dialog ─────────────────────────────────────────────────
+    if (showSplitDialog) {
+        AlertDialog(
+            onDismissRequest = { showSplitDialog = false },
+            title = { Text("Split Document") },
+            text = {
+                Text(
+                    "Split this document into two at page ${selectedPageIndex + 1}? " +
+                        "Pages 1–$selectedPageIndex stay in this document, pages " +
+                        "${selectedPageIndex + 1}–${pages.size} move to a new document."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showSplitDialog = false
+                        viewModel.splitDocument(selectedPageIndex) { newId ->
+                            if (newId != null) {
+                                onOpenDocument(newId)
+                            } else {
+                                Toast.makeText(context, "Split failed", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                ) { Text("Split") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSplitDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
     // ── Rename Dialog ─────────────────────────────────────────────────────────
     if (showRenameDialog && doc != null) {
         var newTitle by remember { mutableStateOf(doc.title) }
@@ -904,4 +1012,44 @@ private fun MetadataRow(label: String, value: String) {
 private fun formatDate(timestamp: Long): String {
     val sdf = SimpleDateFormat("MMM d, yyyy HH:mm", Locale.getDefault())
     return sdf.format(Date(timestamp))
+}
+
+/**
+ * Highlights every case-insensitive match of [query] tokens within [text]
+ * using the theme's primary container color.
+ */
+@Composable
+private fun highlightSearchMatches(text: String, query: String): AnnotatedString {
+    val tokens = query.split(Regex("\\s+")).filter { it.length >= 2 }
+    val backgroundColor = MaterialTheme.colorScheme.primaryContainer
+    val highlightColor = MaterialTheme.colorScheme.onPrimaryContainer
+
+    if (tokens.isEmpty()) return AnnotatedString(text)
+
+    val lowerText = text.lowercase(Locale.getDefault())
+    val matches = mutableListOf<IntRange>()
+    tokens.forEach { token ->
+        val lowerToken = token.lowercase(Locale.getDefault())
+        var index = lowerText.indexOf(lowerToken)
+        while (index >= 0) {
+            matches += index until (index + token.length)
+            index = lowerText.indexOf(lowerToken, index + token.length)
+        }
+    }
+
+    if (matches.isEmpty()) return AnnotatedString(text)
+
+    return buildAnnotatedString {
+        var cursor = 0
+        matches.sortedBy { it.first }.forEach { range ->
+            if (range.first >= cursor) {
+                append(text.substring(cursor, range.first))
+                withStyle(SpanStyle(background = backgroundColor, color = highlightColor, fontWeight = FontWeight.Bold)) {
+                    append(text.substring(range.first, range.last + 1))
+                }
+                cursor = range.last + 1
+            }
+        }
+        if (cursor < text.length) append(text.substring(cursor))
+    }
 }

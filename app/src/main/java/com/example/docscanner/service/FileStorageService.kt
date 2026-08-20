@@ -37,9 +37,16 @@ class FileStorageService(
         return file.absolutePath
     }
 
-    /** Saves a small thumbnail for the document list. */
+    /** Saves a small thumbnail for the document list, preserving the original aspect ratio. */
     fun saveThumbnail(bitmap: Bitmap, documentId: String): String {
-        val thumbnail = Bitmap.createScaledBitmap(bitmap, 300, 400, true)
+        val maxWidth = 300
+        val maxHeight = 400
+        val width = bitmap.width
+        val height = bitmap.height
+        val scale = minOf(maxWidth.toFloat() / width, maxHeight.toFloat() / height)
+        val scaledWidth = (width * scale).toInt().coerceAtLeast(1)
+        val scaledHeight = (height * scale).toInt().coerceAtLeast(1)
+        val thumbnail = Bitmap.createScaledBitmap(bitmap, scaledWidth, scaledHeight, true)
         val file = File(thumbnailsDir, "${documentId}.jpg")
         FileOutputStream(file).use { out ->
             thumbnail.compress(Bitmap.CompressFormat.JPEG, 80, out)
@@ -104,6 +111,20 @@ class FileStorageService(
         }
     }
 
+    /** Copies a page image file into another document's folder (used by split/merge). */
+    fun copyPageToDocument(sourcePath: String, targetDocumentId: String, newPageIndex: Int): String? {
+        return try {
+            val source = File(sourcePath)
+            if (!source.exists()) return null
+            val docDir = File(documentsDir, targetDocumentId).also { it.mkdirs() }
+            val target = File(docDir, "page_${newPageIndex}.jpg")
+            source.copyTo(target, overwrite = true)
+            target.absolutePath
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     /** Gets the total storage size in bytes occupied by a specific document's files (images + PDF + thumbnail). */
     fun getDocumentStorageBytes(documentId: String): Long {
         val docDir = File(documentsDir, documentId)
@@ -122,10 +143,16 @@ class FileStorageService(
         )
     }
 
-    /** Returns the total storage used by the app in bytes. */
-    fun getTotalStorageUsed(): Long = documentsDir.walkBottomUp()
-        .filter { it.isFile }
-        .sumOf { it.length() }
+    /** Returns the total storage used by the app in bytes (documents + thumbnails). */
+    fun getTotalStorageUsed(): Long {
+        val docsBytes = if (documentsDir.exists()) {
+            documentsDir.walkBottomUp().filter { it.isFile }.sumOf { it.length() }
+        } else 0L
+        val thumbsBytes = if (thumbnailsDir.exists()) {
+            thumbnailsDir.walkBottomUp().filter { it.isFile }.sumOf { it.length() }
+        } else 0L
+        return docsBytes + thumbsBytes
+    }
 
     companion object {
         /** Formats byte count into a human-readable string like "1.2 MB" or "450 KB". */

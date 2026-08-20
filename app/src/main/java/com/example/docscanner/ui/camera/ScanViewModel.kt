@@ -8,7 +8,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.docscanner.data.model.CategoryClassifier
 import com.example.docscanner.data.model.Document
-import com.example.docscanner.data.model.DocumentCategory
 import com.example.docscanner.data.model.Page
 import com.example.docscanner.data.pref.CameraQuality
 import com.example.docscanner.data.pref.ScannerPreferences
@@ -157,6 +156,7 @@ class ScanViewModel(
     }
 
     fun clearError() = _state.update { it.copy(error = null) }
+    fun setError(message: String) = _state.update { it.copy(error = message) }
     fun resetState() = _state.update { ScanState() }
 }
 

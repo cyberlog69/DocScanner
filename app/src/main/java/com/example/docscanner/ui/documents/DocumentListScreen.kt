@@ -1,16 +1,13 @@
 package com.example.docscanner.ui.documents
 
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,6 +35,8 @@ import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.CallMerge
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -67,6 +66,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.SmallFloatingActionButton
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -76,12 +77,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -94,6 +97,7 @@ import com.example.docscanner.data.pref.ScannerPreferences
 import com.example.docscanner.service.FileStorageService
 import com.example.docscanner.ui.components.DocScannerBrandLogo
 import com.example.docscanner.ui.settings.SettingsDialog
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -101,7 +105,7 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun DocumentListScreen(
-    onNavigateToDocument: (String) -> Unit,
+    onNavigateToDocument: (String, String?) -> Unit,
     onStartScan: () -> Unit,
     onImportGallery: (List<Uri>) -> Unit = {},
     viewModel: DocumentListViewModel,
@@ -129,8 +133,14 @@ fun DocumentListScreen(
     var showSortMenu by remember { mutableStateOf(false) }
     var showBatchCategoryDialog by remember { mutableStateOf(false) }
     var showBatchDeleteDialog by remember { mutableStateOf(false) }
+    var showBatchMergeDialog by remember { mutableStateOf(false) }
+    var showBatchExportDialog by remember { mutableStateOf(false) }
     var documentToDelete by remember { mutableStateOf<Document?>(null) }
     var documentToRename by remember { mutableStateOf<Document?>(null) }
+
+    val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
 
@@ -174,6 +184,15 @@ fun DocumentListScreen(
                         }
                         IconButton(onClick = { showBatchCategoryDialog = true }) {
                             Icon(Icons.AutoMirrored.Filled.Label, contentDescription = "Change category")
+                        }
+                        IconButton(
+                            onClick = { showBatchMergeDialog = true },
+                            enabled = selectedDocIds.size >= 2
+                        ) {
+                            Icon(Icons.Default.CallMerge, contentDescription = "Merge selected documents")
+                        }
+                        IconButton(onClick = { showBatchExportDialog = true }) {
+                            Icon(Icons.Default.Archive, contentDescription = "Export selected as ZIP")
                         }
                         IconButton(onClick = { showBatchDeleteDialog = true }) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete selected", tint = MaterialTheme.colorScheme.error)
@@ -257,6 +276,7 @@ fun DocumentListScreen(
                 )
             }
         },
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         floatingActionButton = {
             if (!isSelectionMode) {
                 Column(
@@ -402,7 +422,7 @@ fun DocumentListScreen(
                                 if (isSelectionMode) {
                                     viewModel.toggleSelection(doc.id)
                                 } else {
-                                    onNavigateToDocument(doc.id)
+                                    onNavigateToDocument(doc.id, searchQuery)
                                 }
                             },
                             onLongClick = {
@@ -430,7 +450,7 @@ fun DocumentListScreen(
                                 if (isSelectionMode) {
                                     viewModel.toggleSelection(doc.id)
                                 } else {
-                                    onNavigateToDocument(doc.id)
+                                    onNavigateToDocument(doc.id, searchQuery)
                                 }
                             },
                             onLongClick = {
@@ -518,6 +538,80 @@ fun DocumentListScreen(
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showBatchCategoryDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    // ── Batch Merge Dialog ────────────────────────────────────────────────────
+    if (showBatchMergeDialog) {
+        AlertDialog(
+            onDismissRequest = { showBatchMergeDialog = false },
+            title = { Text("Merge ${selectedDocIds.size} Documents") },
+            text = {
+                Text(
+                    "Combine ${selectedDocIds.size} selected documents into one new document? " +
+                        "Pages will be joined in order of creation and the originals will be removed."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showBatchMergeDialog = false
+                        viewModel.mergeSelectedDocuments(documents) { newId ->
+                            if (newId.isNotBlank()) {
+                                onNavigateToDocument(newId, null)
+                            } else {
+                                scope.launch {
+                                    snackbarHostState.showSnackbar("Merge failed. No changes were made.")
+                                }
+                            }
+                        }
+                    }
+                ) { Text("Merge") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatchMergeDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    // ── Batch ZIP Export Dialog ───────────────────────────────────────────────
+    if (showBatchExportDialog) {
+        AlertDialog(
+            onDismissRequest = { showBatchExportDialog = false },
+            title = { Text("Export ${selectedDocIds.size} Documents") },
+            text = { Text("Create a ZIP archive containing the PDF of each selected document to share or save?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showBatchExportDialog = false
+                        viewModel.exportSelectedAsZip(
+                            documents = documents,
+                            context = context,
+                            onReady = { zipFile ->
+                                val uri = androidx.core.content.FileProvider.getUriForFile(
+                                    context,
+                                    "${context.packageName}.fileprovider",
+                                    zipFile
+                                )
+                                val intent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "application/zip"
+                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(Intent.createChooser(intent, "Share ZIP Archive"))
+                            },
+                            onError = { message ->
+                                scope.launch {
+                                    snackbarHostState.showSnackbar("Export failed: $message")
+                                }
+                            }
+                        )
+                    }
+                ) { Text("Export") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatchExportDialog = false }) { Text("Cancel") }
             }
         )
     }

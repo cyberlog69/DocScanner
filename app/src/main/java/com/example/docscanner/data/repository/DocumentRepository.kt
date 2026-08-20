@@ -13,13 +13,8 @@ class DocumentRepository(
     fun getDocumentsByCategory(category: DocumentCategory): Flow<List<Document>> =
         documentDao.getDocumentsByCategory(category)
 
-    fun searchDocuments(query: String): Flow<List<Document>> {
-        // Wrap query for FTS MATCH syntax
-        val ftsQuery = query.trim().split(" ")
-            .filter { it.isNotBlank() }
-            .joinToString(" OR ") { "$it*" }
-        return documentDao.searchDocuments(ftsQuery)
-    }
+    fun searchDocuments(query: String): Flow<List<Document>> =
+        documentDao.searchDocuments(query)
 
     suspend fun getDocumentById(id: String): Document? = documentDao.getDocumentById(id)
 

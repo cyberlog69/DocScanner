@@ -56,31 +56,47 @@ class ScannerPreferences(context: Context) {
     private val _settings = MutableStateFlow(loadSettings())
     val settings: StateFlow<ScannerSettingsState> = _settings.asStateFlow()
 
+    /**
+     * Reads an enum preference stored by name. Falls back to legacy ordinal values
+     * written by older app versions so settings survive upgrades.
+     *
+     * The raw stored value is type-checked before access: older builds stored enum
+     * ordinals as Int, newer builds store enum names as String, so a plain
+     * getString()/getInt() would throw ClassCastException on the wrong-typed value.
+     */
+    private inline fun <reified T : Enum<T>> enumPreference(key: String, default: T): T {
+        return when (val raw = prefs.all[key]) {
+            is String -> T::class.java.enumConstants?.firstOrNull { it.name == raw } ?: default
+            is Int -> T::class.java.enumConstants?.getOrNull(raw) ?: default
+            else -> default
+        }
+    }
+
+    private inline fun <reified T : Enum<T>> setEnumPreference(key: String, value: T) {
+        prefs.edit().putString(key, value.name).apply()
+    }
+
     private fun loadSettings(): ScannerSettingsState {
-        val camOrdinal = prefs.getInt(KEY_CAMERA_QUALITY, CameraQuality.HIGH.ordinal)
-        val pdfOrdinal = prefs.getInt(KEY_PDF_QUALITY, PdfQuality.HIGH.ordinal)
         val autoOcr = prefs.getBoolean(KEY_AUTO_OCR, true)
-        val themeOrdinal = prefs.getInt(KEY_THEME_MODE, ThemeMode.SYSTEM.ordinal)
-        val langOrdinal = prefs.getInt(KEY_OCR_LANGUAGE, OcrLanguage.LATIN.ordinal)
         val bioLock = prefs.getBoolean(KEY_BIOMETRIC_LOCK, false)
 
         return ScannerSettingsState(
-            cameraQuality = CameraQuality.entries.getOrNull(camOrdinal) ?: CameraQuality.HIGH,
-            pdfQuality = PdfQuality.entries.getOrNull(pdfOrdinal) ?: PdfQuality.HIGH,
+            cameraQuality = enumPreference(KEY_CAMERA_QUALITY, CameraQuality.HIGH),
+            pdfQuality = enumPreference(KEY_PDF_QUALITY, PdfQuality.HIGH),
             autoOcr = autoOcr,
-            themeMode = ThemeMode.entries.getOrNull(themeOrdinal) ?: ThemeMode.SYSTEM,
-            ocrLanguage = OcrLanguage.entries.getOrNull(langOrdinal) ?: OcrLanguage.LATIN,
+            themeMode = enumPreference(KEY_THEME_MODE, ThemeMode.SYSTEM),
+            ocrLanguage = enumPreference(KEY_OCR_LANGUAGE, OcrLanguage.LATIN),
             isBiometricLockEnabled = bioLock
         )
     }
 
     fun setCameraQuality(quality: CameraQuality) {
-        prefs.edit().putInt(KEY_CAMERA_QUALITY, quality.ordinal).apply()
+        setEnumPreference(KEY_CAMERA_QUALITY, quality)
         _settings.value = _settings.value.copy(cameraQuality = quality)
     }
 
     fun setPdfQuality(quality: PdfQuality) {
-        prefs.edit().putInt(KEY_PDF_QUALITY, quality.ordinal).apply()
+        setEnumPreference(KEY_PDF_QUALITY, quality)
         _settings.value = _settings.value.copy(pdfQuality = quality)
     }
 
@@ -90,12 +106,12 @@ class ScannerPreferences(context: Context) {
     }
 
     fun setThemeMode(mode: ThemeMode) {
-        prefs.edit().putInt(KEY_THEME_MODE, mode.ordinal).apply()
+        setEnumPreference(KEY_THEME_MODE, mode)
         _settings.value = _settings.value.copy(themeMode = mode)
     }
 
     fun setOcrLanguage(language: OcrLanguage) {
-        prefs.edit().putInt(KEY_OCR_LANGUAGE, language.ordinal).apply()
+        setEnumPreference(KEY_OCR_LANGUAGE, language)
         _settings.value = _settings.value.copy(ocrLanguage = language)
     }
 

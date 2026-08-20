@@ -2,7 +2,6 @@ package com.example.docscanner.ui.camera
 
 import android.Manifest
 import android.app.Activity
-import android.content.IntentSender
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -21,7 +20,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -42,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -63,12 +62,7 @@ fun ScannerLaunchScreen(
 
     // Check permission first
     var hasPermission by remember { mutableStateOf(false) }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasPermission = granted
-    }
+    var permissionDenied by remember { mutableStateOf(false) }
 
     // Scanner result launcher
     val scannerLauncher = rememberLauncherForActivityResult(
@@ -87,6 +81,31 @@ fun ScannerLaunchScreen(
         }
     }
 
+    fun launchScanner() {
+        scope.launch {
+            try {
+                val intentSender = scannerService.getScannerIntentSender(activity)
+                scannerLauncher.launch(
+                    IntentSenderRequest.Builder(intentSender).build()
+                )
+            } catch (e: Exception) {
+                // Scanner not available — surface it instead of silently navigating back.
+                viewModel.setError("Document scanner unavailable on this device.")
+            }
+        }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasPermission = granted
+        permissionDenied = !granted
+        if (granted) {
+            // Start scanning right away once permission is granted.
+            launchScanner()
+        }
+    }
+
     // Navigate to document when saved
     LaunchedEffect(state.savedDocumentId) {
         state.savedDocumentId?.let { id ->
@@ -95,29 +114,28 @@ fun ScannerLaunchScreen(
         }
     }
 
-    // Auto-launch scanner when permission granted
-    LaunchedEffect(hasPermission) {
-        if (hasPermission && !state.isProcessing) {
-            scope.launch {
-                try {
-                    val intentSender = scannerService.getScannerIntentSender(activity)
-                    scannerLauncher.launch(
-                        IntentSenderRequest.Builder(intentSender).build()
-                    )
-                } catch (e: Exception) {
-                    // Scanner not available — navigate back
-                    onNavigateBack()
-                }
-            }
-        }
-    }
-
-    // Request permission on first launch
+    // Auto-launch scanner when permission granted (fresh entry into the screen).
     LaunchedEffect(Unit) {
         permissionLauncher.launch(Manifest.permission.CAMERA)
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
+        when {
+            permissionDenied -> {
+                PermissionDeniedScreen(
+                    onGrantPermission = { permissionLauncher.launch(Manifest.permission.CAMERA) },
+                    onBack = onNavigateBack
+                )
+            }
+
+            hasPermission && !state.isProcessing -> {
+                ReadyToScanScreen(
+                    onStartScan = { launchScanner() },
+                    onBack = onNavigateBack
+                )
+            }
+        }
+
         // Processing overlay
         AnimatedVisibility(
             visible = state.isProcessing,
@@ -141,6 +159,80 @@ fun ScannerLaunchScreen(
             ) {
                 Text(error)
             }
+        }
+    }
+}
+
+@Composable
+private fun PermissionDeniedScreen(
+    onGrantPermission: () -> Unit,
+    onBack: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("📷", style = MaterialTheme.typography.displayLarge)
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "Camera permission required",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "DocScanner needs camera access to detect document edges and scan pages.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        Button(onClick = onGrantPermission) {
+            Text("Grant Camera Permission")
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        TextButton(onClick = onBack) {
+            Text("Back")
+        }
+    }
+}
+
+@Composable
+private fun ReadyToScanScreen(
+    onStartScan: () -> Unit,
+    onBack: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text("🪄", style = MaterialTheme.typography.displayLarge)
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "Ready to scan",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "AI edge detection & perspective correction are available. 100% offline.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        Button(onClick = onStartScan) {
+            Text("Start Scanning")
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        TextButton(onClick = onBack) {
+            Text("Back")
         }
     }
 }

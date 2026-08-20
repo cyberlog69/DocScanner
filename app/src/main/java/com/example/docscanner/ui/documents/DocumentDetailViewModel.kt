@@ -7,8 +7,10 @@ import com.example.docscanner.data.model.Document
 import com.example.docscanner.data.model.DocumentCategory
 import com.example.docscanner.data.model.Page
 import com.example.docscanner.data.pref.PdfQuality
+import com.example.docscanner.data.pref.ScannerPreferences
 import com.example.docscanner.data.repository.DocumentRepository
 import com.example.docscanner.service.FileStorageService
+import com.example.docscanner.service.OcrService
 import com.example.docscanner.service.PageData
 import com.example.docscanner.service.PdfGenerator
 import kotlinx.coroutines.Dispatchers
@@ -19,11 +21,14 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.UUID
 
 class DocumentDetailViewModel(
     private val repository: DocumentRepository,
     private val fileStorageService: FileStorageService,
     private val pdfGenerator: PdfGenerator,
+    private val ocrService: OcrService,
+    private val preferences: ScannerPreferences,
     private val documentId: String
 ) : ViewModel() {
 
@@ -177,6 +182,162 @@ class DocumentDetailViewModel(
     }
 
     /**
+     * Re-runs OCR on a single page using the configured language and updates the document text index.
+     */
+    fun rerunOcrOnPage(page: Page) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _state.update { it.copy(isOcrRunning = true, ocrProgressText = "Running OCR on page ${page.pageIndex + 1}...") }
+            try {
+                val result = ocrService.recognizeTextFromFile(
+                    File(page.imagePath),
+                    preferences.settings.value.ocrLanguage
+                )
+                val updatedPage = page.copy(extractedText = result.fullText)
+                repository.savePage(updatedPage)
+                refreshDocumentText()
+            } catch (e: Exception) {
+                _state.update { it.copy(ocrError = e.message ?: "OCR failed") }
+            } finally {
+                _state.update { it.copy(isOcrRunning = false, ocrProgressText = "") }
+            }
+        }
+    }
+
+    /**
+     * Re-runs OCR on every page and rebuilds the document-level text + FTS index.
+     */
+    fun rerunOcrAll() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _state.update { it.copy(isOcrRunning = true, ocrProgressText = "Running OCR on ${_state.value.pages.size} pages...") }
+            try {
+                val language = preferences.settings.value.ocrLanguage
+                val updatedPages = _state.value.pages.map { page ->
+                    val result = ocrService.recognizeTextFromFile(File(page.imagePath), language)
+                    page.copy(extractedText = result.fullText)
+                }
+                repository.savePages(updatedPages)
+                refreshDocumentText()
+            } catch (e: Exception) {
+                _state.update { it.copy(ocrError = e.message ?: "OCR failed") }
+            } finally {
+                _state.update { it.copy(isOcrRunning = false, ocrProgressText = "") }
+            }
+        }
+    }
+
+    private suspend fun refreshDocumentText() {
+        val doc = _state.value.document ?: return
+        val pages = repository.getPagesForDocumentSync(documentId)
+        val combinedText = pages.joinToString("\n\n--- Page Break ---\n\n") { it.extractedText }
+        repository.updateDocumentMeta(
+            id = documentId,
+            pageCount = pages.size,
+            thumbnailPath = doc.thumbnailPath,
+            pdfPath = doc.pdfPath,
+            extractedText = combinedText
+        )
+        loadDocument()
+    }
+
+    /**
+     * Splits the document into two at [splitIndex] (the page that becomes the first
+     * page of the new second document). The original document keeps the first part;
+     * a new document is created for the second part and returned via [onComplete].
+     */
+    fun splitDocument(splitIndex: Int, onComplete: (String?) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val doc = _state.value.document ?: return@launch
+            val pages = _state.value.pages
+            if (pages.size < 2 || splitIndex <= 0 || splitIndex >= pages.size) return@launch
+
+            val firstPart = pages.subList(0, splitIndex)
+            val secondPart = pages.subList(splitIndex, pages.size)
+            val now = System.currentTimeMillis()
+            val newId = UUID.randomUUID().toString()
+
+            try {
+                // Second part → new document with images copied & re-indexed from 0.
+                val secondPages = secondPart.mapIndexedNotNull { index, page ->
+                    fileStorageService.copyPageToDocument(page.imagePath, newId, index)?.let { newPath ->
+                        page.copy(
+                            id = UUID.randomUUID().toString(),
+                            documentId = newId,
+                            pageIndex = index,
+                            imagePath = newPath,
+                            originalImagePath = newPath
+                        )
+                    }
+                }
+                if (secondPages.isEmpty()) {
+                    withContext(Dispatchers.Main) { onComplete(null) }
+                    return@launch
+                }
+
+                // First part keeps the original document id and files.
+                val firstText = firstPart.joinToString("\n\n--- Page Break ---\n\n") { it.extractedText }
+                val firstThumb = fileStorageService.loadBitmap(firstPart.first().imagePath)?.let { bmp ->
+                    fileStorageService.saveThumbnail(bmp, doc.id).also { bmp.recycle() }
+                } ?: doc.thumbnailPath
+
+                val secondText = secondPages.joinToString("\n\n--- Page Break ---\n\n") { it.extractedText }
+                val secondThumb = fileStorageService.loadBitmap(secondPages.first().imagePath)?.let { bmp ->
+                    fileStorageService.saveThumbnail(bmp, newId).also { bmp.recycle() }
+                } ?: ""
+
+                // Regenerate searchable PDFs for both parts.
+                val pdfQuality = preferences.settings.value.pdfQuality
+
+                val firstPageData = firstPart.mapNotNull { p ->
+                    fileStorageService.loadBitmap(p.imagePath)?.let { PageData(it, p.extractedText) }
+                }
+                val firstPdf = pdfGenerator.generatePdf(firstPageData, doc.title, pdfQuality)
+                val firstPdfPath = fileStorageService.savePdf(firstPdf, doc.id, fileName = "doc_${doc.id}_split_part1.pdf")
+                firstPageData.forEach { it.bitmap.recycle() }
+
+                val secondPageData = secondPages.mapNotNull { p ->
+                    fileStorageService.loadBitmap(p.imagePath)?.let { PageData(it, p.extractedText) }
+                }
+                val secondPdf = pdfGenerator.generatePdf(secondPageData, "${doc.title} (2)", pdfQuality)
+                val secondPdfPath = fileStorageService.savePdf(secondPdf, newId)
+                secondPageData.forEach { it.bitmap.recycle() }
+
+                // Persist the trimmed original document.
+                repository.updateDocumentMeta(
+                    id = doc.id,
+                    pageCount = firstPart.size,
+                    thumbnailPath = firstThumb,
+                    pdfPath = firstPdfPath,
+                    extractedText = firstText
+                )
+
+                // Persist the new document + its pages.
+                val newDoc = Document(
+                    id = newId,
+                    title = "${doc.title} (2)",
+                    category = doc.category,
+                    createdAt = now,
+                    modifiedAt = now,
+                    pageCount = secondPages.size,
+                    thumbnailPath = secondThumb,
+                    pdfPath = secondPdfPath,
+                    extractedText = secondText
+                )
+                repository.saveDocument(newDoc)
+                repository.savePages(secondPages)
+
+                // Remove the moved pages from the original document's record.
+                secondPart.forEach { repository.deletePage(it) }
+
+                loadDocument()
+                withContext(Dispatchers.Main) { onComplete(newId) }
+            } catch (e: Exception) {
+                fileStorageService.deleteDocumentFiles(newId)
+                withContext(Dispatchers.Main) { onComplete(null) }
+            }
+        }
+    }
+
+    /**
      * Generates or re-exports the document PDF with the selected [PdfQuality].
      * Invokes [onReady] with the generated PDF [File].
      */
@@ -224,11 +385,20 @@ class DocumentDetailViewModel(
             repository: DocumentRepository,
             fileStorageService: FileStorageService,
             pdfGenerator: PdfGenerator,
+            ocrService: OcrService,
+            preferences: ScannerPreferences,
             documentId: String
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                return DocumentDetailViewModel(repository, fileStorageService, pdfGenerator, documentId) as T
+                return DocumentDetailViewModel(
+                    repository,
+                    fileStorageService,
+                    pdfGenerator,
+                    ocrService,
+                    preferences,
+                    documentId
+                ) as T
             }
         }
     }
@@ -241,5 +411,8 @@ data class DocumentDetailState(
     val isExporting: Boolean = false,
     val exportProgressText: String = "",
     val exportError: String? = null,
+    val isOcrRunning: Boolean = false,
+    val ocrProgressText: String = "",
+    val ocrError: String? = null,
     val storageBytes: Long = 0L
 )

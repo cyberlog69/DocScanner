@@ -1,19 +1,21 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample data extraction rules file; uncomment and customize as necessary.
-   See https://developer.android.com/about/versions/12/backup-restore#xml-changes
-   for details.
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+   Privacy-first backup rules for Android 12+ (API 31+).
+   Scanned documents, OCR text, thumbnails and the lock/settings preferences are
+   excluded from CLOUD backup so private files never leave the device.
+   Device-to-device transfer remains enabled so users can move scans to a new phone.
 -->
 <data-extraction-rules>
-    <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
+    <cloud-backup disableIfNoEncryptionCapabilities="true">
+        <exclude domain="file" path="documents/"/>
+        <exclude domain="file" path="thumbnails/"/>
+        <exclude domain="database" path="."/>
+        <exclude domain="sharedpref" path="docscanner_settings.xml"/>
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <include domain="file" path="documents/"/>
+        <include domain="file" path="thumbnails/"/>
+        <include domain="database" path="."/>
+        <include domain="sharedpref" path="."/>
     </device-transfer>
-    -->
 </data-extraction-rules>
