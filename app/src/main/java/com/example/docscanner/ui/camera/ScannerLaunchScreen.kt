@@ -106,9 +106,12 @@ fun ScannerLaunchScreen(
         }
     }
 
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+
     // Navigate to document when saved
     LaunchedEffect(state.savedDocumentId) {
         state.savedDocumentId?.let { id ->
+            com.example.docscanner.ui.util.HapticHelper.confirm(haptic)
             onScanComplete(id)
             viewModel.resetState()
         }

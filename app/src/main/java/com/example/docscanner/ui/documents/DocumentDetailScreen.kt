@@ -1,6 +1,9 @@
 package com.example.docscanner.ui.documents
 
 import android.content.Intent
+import android.graphics.BitmapFactory
+import android.print.PrintManager
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -32,14 +35,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.HighQuality
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ZoomIn
@@ -80,6 +86,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -87,17 +94,35 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import android.widget.Toast
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
-import com.example.docscanner.data.model.DocumentCategory
-import com.example.docscanner.data.pref.PdfQuality
+import com.example.docscanner.model.DocumentCategory
+import com.example.docscanner.model.DocumentMetricsCalculator
+import com.example.docscanner.pref.PdfQuality
 import com.example.docscanner.service.FileStorageService
+import com.example.docscanner.service.PdfPrintDocumentAdapter
 import com.example.docscanner.ui.components.ZoomableImageDialog
+import com.example.docscanner.ui.util.HapticHelper
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
+
+private fun printDocument(context: android.content.Context, docTitle: String, pdfPath: String) {
+    val file = File(pdfPath)
+    if (file.exists() && file.length() > 0) {
+        val printManager = context.getSystemService(android.content.Context.PRINT_SERVICE) as? PrintManager
+        if (printManager != null) {
+            val printAdapter = PdfPrintDocumentAdapter(context, file, docTitle)
+            printManager.print("DocScanner_$docTitle", printAdapter, android.print.PrintAttributes.Builder().build())
+        } else {
+            Toast.makeText(context, "Printing service unavailable on this device", Toast.LENGTH_SHORT).show()
+        }
+    } else {
+        Toast.makeText(context, "PDF file is not available for printing", Toast.LENGTH_SHORT).show()
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -110,6 +135,8 @@ fun DocumentDetailScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+
     var showMenu by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showDeletePageDialog by remember { mutableStateOf(false) }
@@ -121,6 +148,23 @@ fun DocumentDetailScreen(
     var zoomPagePath by remember { mutableStateOf<String?>(null) }
     var selectedPdfQuality by remember { mutableStateOf(PdfQuality.UHD_4K) }
     var selectedPageIndex by remember { mutableIntStateOf(0) }
+
+    var isCopiedPage by remember { mutableStateOf(false) }
+    var isCopiedAll by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isCopiedPage) {
+        if (isCopiedPage) {
+            kotlinx.coroutines.delay(2000)
+            isCopiedPage = false
+        }
+    }
+
+    LaunchedEffect(isCopiedAll) {
+        if (isCopiedAll) {
+            kotlinx.coroutines.delay(2000)
+            isCopiedAll = false
+        }
+    }
 
     // Automatically surface the rename dialog right after a fresh scan/import.
     LaunchedEffect(Unit) {
@@ -158,18 +202,18 @@ fun DocumentDetailScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.togglePin() }) {
+                    IconButton(onClick = {
+                        HapticHelper.confirm(haptic)
+                        viewModel.togglePin()
+                    }) {
                         Icon(
                             imageVector = Icons.Default.PushPin,
                             contentDescription = if (doc?.isPinned == true) "Unpin" else "Pin",
                             tint = if (doc?.isPinned == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
                     }
-                    IconButton(onClick = { showPdfQualityDialog = true }) {
-                        Icon(Icons.Default.PictureAsPdf, "Export PDF")
-                    }
                     IconButton(onClick = { showMenu = true }) {
-                        Icon(Icons.Default.MoreVert, "More options")
+                        Icon(Icons.Default.MoreVert, "More actions")
                     }
                     DropdownMenu(
                         expanded = showMenu,
@@ -180,7 +224,19 @@ fun DocumentDetailScreen(
                             leadingIcon = { Icon(Icons.Default.PushPin, null) },
                             onClick = {
                                 showMenu = false
+                                HapticHelper.confirm(haptic)
                                 viewModel.togglePin()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Print Document (Wi-Fi)") },
+                            leadingIcon = { Icon(Icons.Default.Print, null) },
+                            onClick = {
+                                showMenu = false
+                                HapticHelper.click(haptic)
+                                doc?.pdfPath?.let { path ->
+                                    printDocument(context, doc.title, path)
+                                }
                             }
                         )
                         DropdownMenuItem(
@@ -422,6 +478,7 @@ fun DocumentDetailScreen(
                             modifier = Modifier.weight(1f),
                             onClick = {
                                 pages.getOrNull(selectedPageIndex)?.let { page ->
+                                    HapticHelper.click(haptic)
                                     viewModel.rotatePage(page, 90f)
                                 }
                             }
@@ -433,7 +490,10 @@ fun DocumentDetailScreen(
 
                         OutlinedButton(
                             modifier = Modifier.weight(1f),
-                            onClick = { showDeletePageDialog = true },
+                            onClick = {
+                                HapticHelper.heavy(haptic)
+                                showDeletePageDialog = true
+                            },
                             colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
                                 contentColor = MaterialTheme.colorScheme.error
                             )
@@ -479,6 +539,72 @@ fun DocumentDetailScreen(
                             MetadataRow("Pinned", if (it.isPinned) "Yes 📌" else "No")
                             MetadataRow("Created", formatDate(it.createdAt))
                             MetadataRow("Modified", formatDate(it.modifiedAt))
+                        }
+                    }
+                }
+
+                // Page Dimensions, Format & DPI Diagnostics Card
+                val currentPage = pages.getOrNull(selectedPageIndex)
+                if (currentPage != null) {
+                    val (imgWidth, imgHeight) = remember(currentPage.imagePath) {
+                        try {
+                            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                            BitmapFactory.decodeFile(currentPage.imagePath, options)
+                            Pair(options.outWidth, options.outHeight)
+                        } catch (_: Exception) { Pair(0, 0) }
+                    }
+                    val pageMetrics = remember(imgWidth, imgHeight) {
+                        DocumentMetricsCalculator.calculate(imgWidth, imgHeight)
+                    }
+                    val pageFileSize = remember(currentPage.imagePath) {
+                        val f = File(currentPage.imagePath)
+                        if (f.exists()) {
+                            val mb = f.length() / (1024.0 * 1024.0)
+                            "${((mb * 10).roundToInt()) / 10.0} MB"
+                        } else ""
+                    }
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Info,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        text = "Page ${selectedPageIndex + 1} Specs & Dimensions",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                AssistChip(
+                                    onClick = {},
+                                    label = { Text(pageMetrics.format.badge, fontWeight = FontWeight.Bold) }
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            MetadataRow("Paper Standard", "${pageMetrics.format.displayName} (${pageMetrics.format.physicalDimensions})")
+                            MetadataRow("Resolution", "${pageMetrics.resolutionString} • ${pageMetrics.megapixelsString}")
+                            MetadataRow("Scan Fidelity", "${pageMetrics.dpiBadgeString} High-Fidelity")
+                            if (pageFileSize.isNotBlank()) {
+                                MetadataRow("Page Size", pageFileSize)
+                            }
                         }
                     }
                 }
@@ -549,6 +675,11 @@ fun DocumentDetailScreen(
                 // OCR Extracted Text Card
                 val currentExtractedText = pages.getOrNull(selectedPageIndex)?.extractedText
                     ?: doc?.extractedText ?: ""
+                val allPagesExtractedText = remember(pages) {
+                    pages.mapIndexed { idx, p -> "--- Page ${idx + 1} ---\n${p.extractedText}" }
+                        .filter { it.isNotBlank() }
+                        .joinToString("\n\n")
+                }
 
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -566,41 +697,77 @@ fun DocumentDetailScreen(
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.weight(1f)
                             )
-                            if (currentExtractedText.isNotBlank()) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    IconButton(
+                        }
+
+                        if (currentExtractedText.isNotBlank() || allPagesExtractedText.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                FilledTonalButton(
+                                    modifier = Modifier.weight(1f),
+                                    onClick = {
+                                        HapticHelper.confirm(haptic)
+                                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                        val clip = android.content.ClipData.newPlainText("Page Text", currentExtractedText)
+                                        clipboard.setPrimaryClip(clip)
+                                        isCopiedPage = true
+                                        Toast.makeText(context, "Page text copied", Toast.LENGTH_SHORT).show()
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = if (isCopiedPage) Icons.Default.Check else Icons.Default.ContentCopy,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(if (isCopiedPage) "Copied!" else "Copy Page")
+                                }
+
+                                if (pages.size > 1) {
+                                    OutlinedButton(
+                                        modifier = Modifier.weight(1f),
                                         onClick = {
+                                            HapticHelper.confirm(haptic)
                                             val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                                            val clip = android.content.ClipData.newPlainText("Scanned Text", currentExtractedText)
+                                            val clip = android.content.ClipData.newPlainText("All Pages Text", allPagesExtractedText)
                                             clipboard.setPrimaryClip(clip)
-                                            Toast.makeText(context, "Text copied to clipboard", Toast.LENGTH_SHORT).show()
+                                            isCopiedAll = true
+                                            Toast.makeText(context, "All ${pages.size} pages text copied", Toast.LENGTH_SHORT).show()
                                         }
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.ContentCopy,
-                                            contentDescription = "Copy all text",
-                                            modifier = Modifier.size(18.dp)
+                                            imageVector = if (isCopiedAll) Icons.Default.Check else Icons.Default.ContentCopy,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
                                         )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(if (isCopiedAll) "Copied All!" else "Copy All")
                                     }
-                                    IconButton(
-                                        onClick = {
-                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                                type = "text/plain"
-                                                putExtra(Intent.EXTRA_SUBJECT, doc?.title ?: "Scanned Text")
-                                                putExtra(Intent.EXTRA_TEXT, currentExtractedText)
-                                            }
-                                            context.startActivity(Intent.createChooser(shareIntent, "Share Extracted Text"))
+                                }
+
+                                IconButton(
+                                    onClick = {
+                                        HapticHelper.click(haptic)
+                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(Intent.EXTRA_SUBJECT, doc?.title ?: "Scanned Text")
+                                            putExtra(Intent.EXTRA_TEXT, if (pages.size > 1) allPagesExtractedText else currentExtractedText)
                                         }
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Share,
-                                            contentDescription = "Share text",
-                                            modifier = Modifier.size(18.dp)
-                                        )
+                                        context.startActivity(Intent.createChooser(shareIntent, "Share Extracted Text"))
                                     }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Share,
+                                        contentDescription = "Share text",
+                                        modifier = Modifier.size(18.dp)
+                                    )
                                 }
                             }
                         }
+
                         Spacer(modifier = Modifier.height(8.dp))
                         if (currentExtractedText.isNotBlank()) {
                             SelectionContainer {

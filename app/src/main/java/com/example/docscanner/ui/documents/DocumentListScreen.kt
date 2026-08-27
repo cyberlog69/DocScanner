@@ -83,20 +83,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
-import com.example.docscanner.data.model.Document
-import com.example.docscanner.data.model.DocumentCategory
-import com.example.docscanner.data.model.SortOrder
-import com.example.docscanner.data.pref.ScannerPreferences
+import com.example.docscanner.model.Document
+import com.example.docscanner.model.DocumentCategory
+import com.example.docscanner.model.SortOrder
+import com.example.docscanner.pref.ScannerPreferences
 import com.example.docscanner.service.FileStorageService
 import com.example.docscanner.ui.components.DocScannerBrandLogo
 import com.example.docscanner.ui.settings.SettingsDialog
+import com.example.docscanner.ui.util.HapticHelper
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -120,6 +121,7 @@ fun DocumentListScreen(
     val totalStorageBytes by viewModel.totalStorageBytes.collectAsStateWithLifecycle()
 
     val isSelectionMode = selectedDocIds.isNotEmpty()
+    val haptic = LocalHapticFeedback.current
 
     val galleryLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia()
