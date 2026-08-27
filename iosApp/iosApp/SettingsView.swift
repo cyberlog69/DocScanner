@@ -1,4 +1,4 @@
-﻿import SwiftUI
+import SwiftUI
 // import shared  // Uncomment after linking the KMP shared framework
 
 /// Settings screen — mirrors Android SettingsDialog.kt
@@ -12,11 +12,13 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("Security") {
-                Toggle("Face ID / Touch ID Lock", isOn: )
+                Toggle("Face ID / Touch ID Lock", isOn: $isBiometricEnabled)
             }
             Section("OCR Language") {
-                Picker("Language", selection: ) {
-                    ForEach(ocrLanguages, id: \.self) { Text() }
+                Picker("Language", selection: $selectedOcrLanguage) {
+                    ForEach(ocrLanguages, id: \.self) { lang in
+                        Text(lang)
+                    }
                 }
             }
             Section("About") {

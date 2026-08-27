@@ -58,8 +58,50 @@ jobs:
       - name: Compile Kotlin Native Framework for iOS Device
         run: ./gradlew :shared:linkReleaseFrameworkIosArm64 --stacktrace
 
+      - name: Package iOS .ipa for Sideloading
+        run: |
+          mkdir -p build/ios/Payload/DocScanner.app/Frameworks
+          
+          # Copy compiled KMP framework
+          cp -R shared/build/bin/iosArm64/releaseFramework/DocScannerKit.framework build/ios/Payload/DocScanner.app/Frameworks/
+          
+          # Copy Info.plist
+          cp iosApp/iosApp/Info.plist build/ios/Payload/DocScanner.app/Info.plist
+          
+          # Compile Swift sources into executable Mach-O binary
+          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+          swiftc -sdk $SDK_PATH \
+            -target arm64-apple-ios15.0 \
+            -F shared/build/bin/iosArm64/releaseFramework \
+            -framework UIKit \
+            -framework SwiftUI \
+            -framework VisionKit \
+            -framework Vision \
+            -framework LocalAuthentication \
+            -framework PDFKit \
+            -framework DocScannerKit \
+            -Xlinker -rpath -Xlinker @executable_path/Frameworks \
+            -o build/ios/Payload/DocScanner.app/DocScanner \
+            iosApp/iosApp/iOSApp.swift \
+            iosApp/iosApp/ContentView.swift \
+            iosApp/iosApp/ScannerView.swift \
+            iosApp/iosApp/DocumentListView.swift \
+            iosApp/iosApp/DocumentDetailView.swift \
+            iosApp/iosApp/SettingsView.swift
+          
+          # Package into .ipa archive
+          cd build/ios
+          zip -r DocScanner.ipa Payload
+
       - name: Upload iOS Framework Artifact
         uses: actions/upload-artifact@v4
         with:
           name: DocScannerKit-iOS-Framework
           path: shared/build/bin/iosArm64/releaseFramework/
+
+      - name: Upload iOS .ipa Sideload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DocScanner-iOS-IPA
+          path: build/ios/DocScanner.ipa
+

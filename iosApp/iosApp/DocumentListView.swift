@@ -1,4 +1,4 @@
-﻿import SwiftUI
+import SwiftUI
 // import shared  // Uncomment after building the KMP shared.xcframework on Mac
 
 /// Document list screen — mirrors Android DocumentListScreen.kt
@@ -24,8 +24,7 @@ struct DocumentListView: View {
                 }
             }
         }
-        .sheet(isPresented: ) {
-            // TODO: Wire VNDocumentCameraViewController via ScannerView
+        .sheet(isPresented: $isShowingScanner) {
             ScannerView()
         }
     }
