@@ -1,19 +1,14 @@
 import SwiftUI
-import UIKit
-import DocScannerKit
-import VisionKit
-
-struct ComposeView: UIViewControllerRepresentable {
-    func makeUIViewController(context: Context) -> UIViewController {
-        return MainViewControllerKt.MainViewController()
-    }
-
-    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
-}
 
 struct ContentView: View {
+    @StateObject private var store = DocumentStore()
+
     var body: some View {
-        ComposeView()
-            .ignoresSafeArea(.all)
+        NavigationView {
+            DocumentListView()
+        }
+        .environmentObject(store)
+        .navigationViewStyle(StackNavigationViewStyle())
     }
 }
+

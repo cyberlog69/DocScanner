@@ -51,7 +51,7 @@ class FileStorageService(
         FileOutputStream(file).use { out ->
             thumbnail.compress(Bitmap.CompressFormat.JPEG, 80, out)
         }
-        thumbnail.recycle()
+        if (thumbnail !== bitmap) thumbnail.recycle()
         return file.absolutePath
     }
 
@@ -69,8 +69,54 @@ class FileStorageService(
         return if (file.exists()) file else null
     }
 
-    /** Loads a bitmap from a file path. */
-    fun loadBitmap(path: String): Bitmap? = BitmapFactory.decodeFile(path)
+    /**
+     * Safely decodes a bitmap from file with power-of-2 subsampling to prevent OutOfMemoryError
+     * on large 4K / 600 DPI document scans.
+     */
+    fun decodeSampledBitmap(path: String, reqWidth: Int = 4096, reqHeight: Int = 4096): Bitmap? {
+        return try {
+            val options = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeFile(path, options)
+
+            if (options.outWidth <= 0 || options.outHeight <= 0) return null
+
+            var inSampleSize = 1
+            val height = options.outHeight
+            val width = options.outWidth
+
+            if (height > reqHeight || width > reqWidth) {
+                val halfHeight = height / 2
+                val halfWidth = width / 2
+                while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
+                    inSampleSize *= 2
+                }
+            }
+
+            val decodeOptions = BitmapFactory.Options().apply {
+                this.inSampleSize = inSampleSize
+                this.inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            BitmapFactory.decodeFile(path, decodeOptions)
+        } catch (_: OutOfMemoryError) {
+            try {
+                val fallbackOptions = BitmapFactory.Options().apply {
+                    inSampleSize = 4
+                    inPreferredConfig = Bitmap.Config.RGB_565
+                }
+                BitmapFactory.decodeFile(path, fallbackOptions)
+            } catch (_: Throwable) {
+                null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** Loads a bitmap from a file path with safe memory bounds. */
+    fun loadBitmap(path: String, maxWidth: Int = 4096, maxHeight: Int = 4096): Bitmap? =
+        decodeSampledBitmap(path, maxWidth, maxHeight)
 
     /** Creates a temporary file in cache for camera captures. */
     fun createTempImageFile(): File {
@@ -94,10 +140,10 @@ class FileStorageService(
         }
     }
 
-    /** Rotates an image file on disk by [degrees] clockwise and saves it back. */
+    /** Rotates an image file on disk by [degrees] clockwise and saves it back safely. */
     fun rotateImageFile(imagePath: String, degrees: Float = 90f): Boolean {
         return try {
-            val bitmap = BitmapFactory.decodeFile(imagePath) ?: return false
+            val bitmap = decodeSampledBitmap(imagePath, reqWidth = 4096, reqHeight = 4096) ?: return false
             val matrix = android.graphics.Matrix().apply { postRotate(degrees) }
             val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
             FileOutputStream(imagePath).use { out ->

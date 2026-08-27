@@ -12,6 +12,8 @@ import platform.UIKit.UIImageJPEGRepresentation
 import kotlin.math.log10
 import kotlin.math.pow
 
+import kotlinx.cinterop.useContents
+
 @OptIn(ExperimentalForeignApi::class)
 actual class PlatformStorage {
 
@@ -42,7 +44,31 @@ actual class PlatformStorage {
 
     actual fun rotateImageFile(filePath: String, degrees: Float): Boolean {
         val image = UIImage.imageWithContentsOfFile(filePath) ?: return false
-        val rotatedData = UIImageJPEGRepresentation(image, 0.92) ?: return false
+        val normalizedDegrees = ((degrees % 360f) + 360f) % 360f
+        val isSwapDimension = normalizedDegrees == 90f || normalizedDegrees == 270f
+        val (originalWidth, originalHeight) = image.size.useContents { width to height }
+        val targetWidth = if (isSwapDimension) originalHeight else originalWidth
+        val targetHeight = if (isSwapDimension) originalWidth else originalHeight
+        val targetSize = platform.CoreGraphics.CGSizeMake(targetWidth, targetHeight)
+
+        platform.UIKit.UIGraphicsBeginImageContextWithOptions(targetSize, false, image.scale)
+        val context = platform.UIKit.UIGraphicsGetCurrentContext() ?: run {
+            platform.UIKit.UIGraphicsEndImageContext()
+            return false
+        }
+
+        platform.CoreGraphics.CGContextTranslateCTM(context, targetWidth / 2.0, targetHeight / 2.0)
+        val radians = normalizedDegrees.toDouble() * (kotlin.math.PI / 180.0)
+        platform.CoreGraphics.CGContextRotateCTM(context, radians)
+        image.drawInRect(platform.CoreGraphics.CGRectMake(-originalWidth / 2.0, -originalHeight / 2.0, originalWidth, originalHeight))
+
+        val rotatedImage = platform.UIKit.UIGraphicsGetImageFromCurrentImageContext()
+        platform.UIKit.UIGraphicsEndImageContext()
+
+        if (rotatedImage == null) return false
+        val rotatedData = UIImageJPEGRepresentation(rotatedImage, 0.92) ?: return false
         return NSFileManager.defaultManager.createFileAtPath(filePath, rotatedData, null)
     }
 }
+
+

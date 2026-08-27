@@ -63,80 +63,112 @@ class ScanViewModel(
             _state.update { it.copy(isProcessing = true, processingStep = "Loading ${settings.cameraQuality.badge} images...") }
 
             try {
+                val isAppending = existingDocumentId != null
+                val existingDoc = if (isAppending) repository.getDocumentById(existingDocumentId!!) else null
+                val existingPages = if (isAppending) repository.getPagesForDocumentSync(existingDocumentId!!) else emptyList()
+                val startPageIndex = existingPages.size
+
                 val documentId = existingDocumentId ?: UUID.randomUUID().toString()
-                val bitmaps = pageUris.mapNotNull { uri -> decodeBitmapFromUri(uri) }
 
-                if (bitmaps.isEmpty()) {
-                    _state.update { it.copy(isProcessing = false, error = "No pages found") }
-                    return@launch
+                // Save or preserve thumbnail
+                val thumbnailPath = if (existingDoc?.thumbnailPath.isNullOrBlank()) {
+                    fileStorageService.saveThumbnail(bitmaps.first(), documentId)
+                } else {
+                    existingDoc!!.thumbnailPath
                 }
 
-                // Save first page as document thumbnail
-                val thumbnailPath = fileStorageService.saveThumbnail(bitmaps.first(), documentId)
-
-                // Save all page images with selected camera quality
-                val imagePaths = bitmaps.mapIndexed { index, bitmap ->
-                    fileStorageService.savePageImage(bitmap, documentId, index, quality = imageQuality)
+                // Save new page images with selected camera quality, offset by startPageIndex
+                val newImagePaths = bitmaps.mapIndexed { index, bitmap ->
+                    fileStorageService.savePageImage(bitmap, documentId, startPageIndex + index, quality = imageQuality)
                 }
 
-                // Run OCR on each page using selected OCR Language (if auto OCR is enabled)
-                val ocrResults = if (settings.autoOcr) {
+                // Run OCR on new pages using selected OCR Language (if auto OCR is enabled)
+                val newOcrResults = if (settings.autoOcr) {
                     _state.update { it.copy(processingStep = "Running AI OCR on ${bitmaps.size} pages (${settings.ocrLanguage.displayName})...") }
                     bitmaps.map { bitmap -> ocrService.recognizeText(bitmap, settings.ocrLanguage) }
                 } else {
                     emptyList()
                 }
 
-                val fullText = ocrResults.joinToString("\n\n--- Page Break ---\n\n") { it.fullText }
-
-                // Smart auto-categorize based on OCR text
-                val detectedCategory = CategoryClassifier.classify(fullText)
-
-                // Generate Searchable PDF using configured PDF Quality profile (e.g. UHD / High / Standard)
-                _state.update { it.copy(processingStep = "Generating ${settings.pdfQuality.badge} PDF...") }
-                val pageDataList = bitmaps.mapIndexed { i, bitmap ->
-                    PageData(bitmap = bitmap, extractedText = ocrResults.getOrNull(i)?.fullText ?: "")
+                val newFullText = newOcrResults.joinToString("\n\n--- Page Break ---\n\n") { it.fullText }
+                val combinedText = if (existingDoc != null && existingDoc.extractedText.isNotBlank()) {
+                    if (newFullText.isNotBlank()) "${existingDoc.extractedText}\n\n--- Page Break ---\n\n$newFullText" else existingDoc.extractedText
+                } else {
+                    newFullText
                 }
+
+                // Build complete PageData list for all pages (existing + new) to regenerate searchable PDF
+                _state.update { it.copy(processingStep = "Generating ${settings.pdfQuality.badge} PDF...") }
+                val allPageData = mutableListOf<PageData>()
+                for (page in existingPages) {
+                    val pageBitmap = fileStorageService.loadBitmap(page.imagePath)
+                    if (pageBitmap != null) {
+                        allPageData.add(PageData(bitmap = pageBitmap, extractedText = page.extractedText))
+                    }
+                }
+                bitmaps.forEachIndexed { i, bitmap ->
+                    allPageData.add(PageData(bitmap = bitmap, extractedText = newOcrResults.getOrNull(i)?.fullText ?: ""))
+                }
+
                 val pdfBytes = pdfGenerator.generatePdf(
-                    pages = pageDataList,
-                    title = "Scanned Document",
+                    pages = allPageData,
+                    title = existingDoc?.title ?: "Scanned Document",
                     quality = settings.pdfQuality
                 )
                 val pdfPath = fileStorageService.savePdf(pdfBytes, documentId)
 
-                // Create or update document in SQLite
-                val document = Document(
-                    id = documentId,
-                    title = generateTitle(ocrResults.firstOrNull()?.fullText),
-                    category = detectedCategory,
-                    pageCount = bitmaps.size,
-                    thumbnailPath = thumbnailPath,
-                    pdfPath = pdfPath,
-                    extractedText = fullText
-                )
+                // Clean up any loaded intermediate bitmaps for existing pages
+                for (i in 0 until existingPages.size) {
+                    allPageData.getOrNull(i)?.bitmap?.recycle()
+                }
+
+                // Save or update document in SQLite
+                val document = if (existingDoc != null) {
+                    existingDoc.copy(
+                        pageCount = existingPages.size + bitmaps.size,
+                        thumbnailPath = thumbnailPath,
+                        pdfPath = pdfPath,
+                        extractedText = combinedText,
+                        modifiedAt = System.currentTimeMillis()
+                    )
+                } else {
+                    val detectedCategory = CategoryClassifier.classify(combinedText)
+                    Document(
+                        id = documentId,
+                        title = generateTitle(newOcrResults.firstOrNull()?.fullText),
+                        category = detectedCategory,
+                        createdAt = System.currentTimeMillis(),
+                        modifiedAt = System.currentTimeMillis(),
+                        pageCount = bitmaps.size,
+                        thumbnailPath = thumbnailPath,
+                        pdfPath = pdfPath,
+                        extractedText = combinedText
+                    )
+                }
                 repository.saveDocument(document)
 
-                // Save pages
-                val pages = imagePaths.mapIndexed { index, path ->
+                // Save new pages
+                val newPages = newImagePaths.mapIndexed { index, path ->
                     Page(
                         id = UUID.randomUUID().toString(),
                         documentId = documentId,
-                        pageIndex = index,
+                        pageIndex = startPageIndex + index,
                         imagePath = path,
                         originalImagePath = path,
-                        extractedText = ocrResults.getOrNull(index)?.fullText ?: ""
+                        extractedText = newOcrResults.getOrNull(index)?.fullText ?: "",
+                        createdAt = System.currentTimeMillis()
                     )
                 }
-                repository.savePages(pages)
+                repository.savePages(newPages)
 
-                // Recycle bitmaps
+                // Recycle new capture bitmaps
                 bitmaps.forEach { it.recycle() }
 
                 _state.update {
                     it.copy(
                         isProcessing = false,
                         savedDocumentId = documentId,
-                        ocrPreviewText = ocrResults.firstOrNull()?.fullText ?: ""
+                        ocrPreviewText = newOcrResults.firstOrNull()?.fullText ?: ""
                     )
                 }
 

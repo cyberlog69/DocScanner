@@ -85,5 +85,18 @@ Download the latest release from the [Releases](https://github.com/cyberlog69/Do
 ```
 DocScanner does not require or request network permissions. Your personal files, identity documents, and scanned records never leave your device.
 
+---
+
+## 📜 License & Third-Party Notices
+
+This project is licensed under the **Apache License 2.0**. See the [LICENSE](LICENSE) file for details.
+
+### Third-Party Libraries & Dual Licensing
+- **iText 7/8 Core (`com.itextpdf:itext-core`)**: Distributed under the **GNU AGPLv3** open-source license and available under commercial licensing from Apryse/iText Group NV. If you build or distribute commercial derivative works without making source available under AGPLv3, an iText commercial license is required.
+- **Google ML Kit**: Distributed under Google APIs Terms of Service and Apache 2.0 components.
+- **Bouncy Castle Adapter**: Distributed under the Bouncy Castle License (MIT-derivative).
+- **Apple Vision / PDFKit / LocalAuthentication**: Native iOS system frameworks provided under Apple Developer Agreement.
+
+
 
 

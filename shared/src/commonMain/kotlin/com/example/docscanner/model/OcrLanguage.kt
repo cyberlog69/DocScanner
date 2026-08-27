@@ -3,14 +3,15 @@ package com.example.docscanner.model
 enum class OcrLanguage(
     val displayName: String,
     val nativeName: String,
-    val flagEmoji: String,
-    val iosRecognitionCode: String
+    val badge: String,
+    val flagEmoji: String = "🌐",
+    val iosRecognitionCode: String = "en-US"
 ) {
-    LATIN("English / Latin", "Latin Script", "🌐", "en-US"),
-    DEVANAGARI("Hindi / Devanagari", "हिन्दी / देवनागरी", "🇮🇳", "hi-IN"),
-    CHINESE("Chinese", "中文 (Simplified)", "🇨🇳", "zh-Hans"),
-    JAPANESE("Japanese", "日本語", "🇯🇵", "ja-JP"),
-    KOREAN("Korean", "한국어", "🇰🇷", "ko-KR");
+    LATIN("English / Latin", "English, Spanish, French, German, etc.", "EN/LATIN", "🌐", "en-US"),
+    DEVANAGARI("Hindi / Devanagari", "हिन्दी, मराठी, संस्कृत", "HI/DEV", "🇮🇳", "hi-IN"),
+    CHINESE("Chinese", "中文 (简体 / 繁體)", "ZH/CN", "🇨🇳", "zh-Hans"),
+    JAPANESE("Japanese", "日本語 (漢字 / かな)", "JA/JP", "🇯🇵", "ja-JP"),
+    KOREAN("Korean", "한국어 (한글)", "KO/KR", "🇰🇷", "ko-KR");
 
     companion object {
         fun fromString(value: String): OcrLanguage {
@@ -18,3 +19,4 @@ enum class OcrLanguage(
         }
     }
 }
+

@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Settings screen — mirrors Android SettingsDialog.kt
 struct SettingsView: View {
-    // TODO: Replace with shared KMP ScannerPreferences
+    @Environment(\.dismiss) private var dismiss
     @State private var isBiometricEnabled = false
     @State private var selectedOcrLanguage = "English / Latin"
 
@@ -25,7 +25,7 @@ struct SettingsView: View {
                 HStack {
                     Text("Version")
                     Spacer()
-                    Text("1.5.0-beta").foregroundColor(.secondary)
+                    Text("1.6.0-beta").foregroundColor(.secondary)
                 }
                 HStack {
                     Text("Privacy")
@@ -35,5 +35,12 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("Done") {
+                    dismiss()
+                }
+            }
+        }
     }
 }

@@ -38,6 +38,9 @@ android {
 }
 
 dependencies {
+    // Kotlin Multiplatform Shared Core Module
+    implementation project(':shared')
+
     def composeBom = platform(libs.androidx.compose.bom)
     implementation composeBom
     androidTestImplementation composeBom
