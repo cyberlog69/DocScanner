@@ -5,6 +5,7 @@ import android.content.Context
 import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import android.util.Log
 import com.example.docscanner.data.model.Document
 import com.example.docscanner.data.model.DocumentCategory
 import com.example.docscanner.data.model.Page
@@ -174,7 +175,9 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                 if (!hasIsPinned) {
                     db.execSQL("ALTER TABLE $TABLE_DOCUMENTS ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0")
                 }
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                Log.e("AppDatabase", "Error migrating database to v3 (isPinned column)", e)
+            }
             version = 3
         }
 
@@ -207,7 +210,9 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                     """.trimIndent()
                 )
                 db.execSQL("INSERT INTO $TABLE_DOCUMENTS_FTS(docid, title, extractedText, tags) SELECT rowid, title, extractedText, tags FROM $TABLE_DOCUMENTS")
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                Log.e("AppDatabase", "Error migrating database to v4 (tags column and FTS update)", e)
+            }
             version = 4
         }
     }
@@ -464,19 +469,23 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
 
     private fun updateFts(docId: String, title: String, text: String, tags: String = "") {
         try {
-            val cursor = readableDatabase.rawQuery("SELECT rowid FROM $TABLE_DOCUMENTS WHERE id = ?", arrayOf(docId))
-            if (cursor.moveToFirst()) {
-                val rowId = cursor.getLong(0)
-                val values = ContentValues().apply {
-                    put("docid", rowId)
-                    put("title", title)
-                    put("extractedText", text)
-                    put("tags", tags)
+            readableDatabase.rawQuery("SELECT rowid FROM $TABLE_DOCUMENTS WHERE id = ?", arrayOf(docId)).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val rowId = cursor.getLong(0)
+                    val values = ContentValues().apply {
+                        put("docid", rowId)
+                        put("title", title)
+                        put("extractedText", text)
+                        put("tags", tags)
+                    }
+                    writableDatabase.insertWithOnConflict(TABLE_DOCUMENTS_FTS, null, values, SQLiteDatabase.CONFLICT_REPLACE)
+                } else {
+                    Log.w("AppDatabase", "FTS indexing skipped: No rowid found for document id=$docId")
                 }
-                writableDatabase.insertWithOnConflict(TABLE_DOCUMENTS_FTS, null, values, SQLiteDatabase.CONFLICT_REPLACE)
             }
-            cursor.close()
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.e("AppDatabase", "Failed to update FTS for docId=$docId", e)
+        }
     }
 
     private fun queryDocuments(sql: String, args: Array<String>?): List<Document> {

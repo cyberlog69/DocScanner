@@ -1,6 +1,7 @@
 package com.example.docscanner.service
 
 import android.graphics.Bitmap
+import android.util.Log
 import com.example.docscanner.data.pref.PdfQuality
 import com.itextpdf.io.image.ImageDataFactory
 import com.itextpdf.kernel.geom.PageSize
@@ -42,7 +43,7 @@ class PdfGenerator {
             document.close()
             pdfDoc.close()
         } catch (e: Exception) {
-            // Fallback: create basic PDF with just images
+            Log.e("PdfGenerator", "Error generating searchable PDF with iText, falling back to basic image PDF", e)
             return generateBasicPdf(pages, title, quality)
         }
 
@@ -97,17 +98,18 @@ class PdfGenerator {
                 12f
             )
 
-            // Place text lines at approximate positions
+            // Place text lines at absolute coordinates via text matrix to prevent position drift
             val lines = pageData.extractedText.split("\n").filter { it.isNotBlank() }
-            val lineHeight = pageHeight / (lines.size + 1).coerceAtLeast(1)
+            val lineHeight = (pageHeight - 40f) / lines.size.coerceAtLeast(1)
             lines.forEachIndexed { i, line ->
-                val y = pageHeight - (i + 1) * lineHeight
-                canvas.moveText(20.0, y.toDouble())
+                val y = pageHeight - 20f - (i * lineHeight)
+                canvas.setTextMatrix(1f, 0f, 0f, 1f, 20f, y)
                 canvas.showText(line)
-                canvas.newlineText()
             }
             canvas.endText()
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w("PdfGenerator", "Failed to add invisible OCR text layer to PDF page", e)
+        }
     }
 
     private fun bitmapToBytes(bitmap: Bitmap, quality: PdfQuality): ByteArray {

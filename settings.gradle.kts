@@ -1,4 +1,4 @@
-pluginManagement {
+﻿pluginManagement {
     repositories {
         google()
         mavenCentral()
@@ -10,10 +10,12 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven { url 'https://repo.itextsupport.com/releases' }
+        maven {
+            url = uri("https://repo.itextsupport.com/releases")
+        }
     }
 }
 
 rootProject.name = "DocScanner"
-include ':app'
-include ':shared'
+include(":app")
+include(":shared")
