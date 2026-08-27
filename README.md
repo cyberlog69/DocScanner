@@ -1,26 +1,28 @@
 # 🚀 DocScanner - Offline AI Document Scanner
 
 [![Android](https://img.shields.io/badge/Platform-Android-green.svg)](https://developer.android.com)
-[![Kotlin](https://img.shields.io/badge/Language-Kotlin%202.3-purple.svg)](https://kotlinlang.org)
-[![Jetpack Compose](https://img.shields.io/badge/UI-Jetpack%20Compose%20%26%20M3-4285F4.svg)](https://developer.android.com/jetpack/compose)
+[![iOS](https://img.shields.io/badge/Platform-iOS-blue.svg)](https://developer.apple.com/ios)
+[![Kotlin Multiplatform](https://img.shields.io/badge/Kotlin-Multiplatform%202.3-7F52FF.svg)](https://www.jetbrains.com/kotlin-multiplatform/)
+[![Jetpack Compose](https://img.shields.io/badge/UI-Compose%20%26%20M3-4285F4.svg)](https://developer.android.com/jetpack/compose)
 [![Privacy](https://img.shields.io/badge/Privacy-100%25%20Offline-brightgreen.svg)](#-privacy-guarantee)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-**DocScanner** is a fast, modern, privacy-focused Android application that transforms your device into an offline AI document scanning workstation. Powered by Google ML Kit and Jetpack Compose, it detects documents, corrects perspective, performs on-device OCR across multiple languages, categorizes documents smartly, and generates searchable PDFs—all locally without connecting to the cloud.
+**DocScanner** is a fast, modern, privacy-focused application that transforms your mobile device into an offline AI document scanning workstation. Built with **Kotlin Multiplatform (KMP)** and **Compose**, it supports both **Android & iOS** with 100% on-device AI OCR, document edge detection, smart auto-categorization, and searchable PDF creation—all completely offline without connecting to the cloud.
 
 ---
 
 ## ✨ Features
 
-- 🔐 **App Lock & Biometric Authentication**: Protect sensitive documents with Fingerprint, Face Unlock, or device PIN/pattern. 100% offline via `BiometricPrompt`.
-- 🌍 **Multi-Language On-Device OCR**: Offline text recognition supporting **Latin, Devanagari (Hindi/Sanskrit/Marathi/Nepali), Chinese, Japanese, and Korean**.
+- 🍏 **Kotlin Multiplatform (Android & iOS)**: Shared domain models, pure Kotlin heuristic classifier, and native platform bridges (`expect`/`actual`).
+- 🔐 **App Lock & Biometric Authentication**: Protect sensitive documents with Fingerprint, Face ID / Touch ID, or device PIN/pattern. 100% offline.
+- 🌍 **Multi-Language On-Device AI OCR**: Offline text recognition supporting **Latin, Devanagari (Hindi/Sanskrit/Marathi/Nepali), Chinese, Japanese, and Korean** (Google ML Kit on Android, Apple Vision on iOS).
 - 🔍 **Pinch-to-Zoom & Pan Page Lightbox**: Fullscreen interactive page viewer with up to 5x zoom, double-tap zoom toggle, and smooth boundary clamping.
 - 📊 **Smart Auto-Categorization**: Offline heuristic classifier automatically identifies Invoices, Receipts, ID Cards, Contracts, Notes, and Books from OCR text.
 - 🔖 **Tags & Custom Labels**: Organize scans with custom searchable `#tags` and filter chips.
 - 📤 **Bulk Import from Gallery**: Select and import multiple photos/documents from device storage directly into the OCR pipeline.
 - 📋 **Enhanced Text Tools**: One-tap "Copy All Text", native "Share Text" sheet, and selectable paragraph text.
-- 📸 **Smart Document Detection & Perspective Correction**: Automatically detects document boundaries, crops, flattens, and applies enhancement filters using Google Play Services Document Scanner API.
-- 📄 **Searchable & UHD PDF Generation**: Generates searchable PDFs with invisible OCR overlay. Supports **Standard (150 DPI)**, **High (300 DPI)**, and **Ultra HD (600 DPI Archival)** exports using iText 7.
+- 📸 **Smart Document Detection & Perspective Correction**: Automatically detects document boundaries, crops, flattens, and applies enhancement filters (Google Document Scanner on Android, Apple VisionKit on iOS).
+- 📄 **Searchable & UHD PDF Generation**: Generates searchable PDFs with invisible OCR overlay. Supports **Standard (150 DPI)**, **High (300 DPI)**, and **Ultra HD (600 DPI Archival)** exports.
 - 📌 **Document Pinning & Favourites**: Pin important documents to keep them floating at the top of your list.
 - ✏️ **Page-Level Editing**: Rotate individual pages in 90° increments and delete specific pages from multi-page scans with automated re-indexing.
 - 📂 **Multi-Select & Batch Operations**: Long-press cards to enter multi-select mode. Batch delete, batch change categories, or batch pin multiple documents simultaneously.
@@ -33,55 +35,45 @@
 
 ---
 
-## 🏛️ Architecture
+## 🏛️ Multiplatform Architecture
 
 ```
 DocScanner
-├── app/src/main/java/com/example/docscanner/
-│   ├── data/
-│   │   ├── db/          # SQLiteOpenHelper with FTS4 virtual tables, v4 migration & Flow queries
-│   │   ├── model/       # Document, Page, CategoryClassifier, SortOrder, and DocumentCategory
-│   │   ├── pref/        # ScannerPreferences (OcrLanguage, BiometricLock, Quality, Theme)
-│   │   └── repository/  # DocumentRepository layer
-│   ├── service/
-│   │   ├── DocumentScannerService.kt # ML Kit Document Scanner integration
-│   │   ├── FileStorageService.kt     # App sandbox storage, rotation & FileProvider URI management
-│   │   ├── OcrService.kt             # Multi-language ML Kit Text Recognition v2 engine
-│   │   └── PdfGenerator.kt           # iText 7 searchable PDF generator with multi-DPI profiles
-│   ├── ui/
-│   │   ├── camera/      # Document scanner launch screen & OCR state handling
-│   │   ├── components/  # ZoomableImageViewer, Material 3 Brand Logo & UI widgets
-│   │   ├── documents/   # Document list (grid/list/batch/sort/tags) & detail screens
-│   │   ├── navigation/  # Type-safe Compose navigation routes & factories
-│   │   ├── settings/    # SettingsDialog for Biometric Lock, OCR Language, Theme & Quality
-│   │   └── theme/       # Material 3 Color Schemes & Typography
-│   ├── DocScannerApp.kt # Application container & Service Locator
-│   └── MainActivity.kt  # FragmentActivity with Biometric Lock & edge-to-edge Compose
+├── shared/                         # Kotlin Multiplatform Shared Core (KMP)
+│   ├── src/commonMain/             # Shared domain models, classifier & expect declarations
+│   │   └── kotlin/com/example/docscanner/
+│   │       ├── model/              # Document, Page, CategoryClassifier, SortOrder, OcrLanguage, PdfQuality
+│   │       └── bridge/             # expect class: PlatformOcrEngine, PlatformBiometrics, PlatformPdfGenerator, PlatformStorage
+│   ├── src/androidMain/            # Android actual implementations (ML Kit, BiometricPrompt, iText 7)
+│   └── src/iosMain/                # iOS actual implementations (Apple VisionKit, Vision OCR, LocalAuth, PDFKit)
+├── app/                            # Android Application module (Jetpack Compose UI)
+├── iosApp/                         # iOS Application (SwiftUI host embedding Compose UI)
+│   ├── iosApp/                     # iOSApp.swift, ContentView.swift, Info.plist
+└── .github/workflows/build-ios.yml # Automated macOS CI workflow compiling iOS framework
 ```
 
 ---
 
-## 🛠️ Tech Stack & Libraries
+## 🛠️ Tech Stack & Platform Mappings
 
-| Category | Technology |
-|---|---|
-| **Language** | Kotlin 2.3.20 |
-| **Build Tool** | Gradle 9.1.0 & Android Gradle Plugin 9.0.1 |
-| **UI Framework** | Jetpack Compose & Material Design 3 |
-| **Security** | AndroidX Biometric (`BiometricPrompt`) |
-| **Document Scanner** | Google Play Services Document Scanner API |
-| **OCR Engine** | ML Kit Text Recognition v2 (Latin, Devanagari, Chinese, Japanese, Korean) |
-| **PDF Generation** | iText 7 (Core + Bouncy Castle) |
-| **Database** | SQLite + FTS4 Full-Text Search (Migration v4) |
-| **Image Loading** | Coil Compose |
-| **Asynchrony** | Kotlin Coroutines & Flow |
+| Feature | Android (`androidMain`) | iOS (`iosMain`) |
+|---|---|---|
+| **Language** | Kotlin 2.3.20 | Kotlin / Native 2.3.20 |
+| **Document Scanner** | Google Play Services Document Scanner | Apple **VisionKit** (`VNDocumentCameraViewController`) |
+| **Offline OCR Engine**| Google ML Kit Text Recognition v2 | Apple **Vision Framework** (`VNRecognizeTextRequest`) |
+| **App Lock / Security**| AndroidX Biometric (`BiometricPrompt`) | Apple **LocalAuthentication** (Face ID / Touch ID) |
+| **PDF Generation** | iText 7 (Core + Bouncy Castle) | Apple **PDFKit** (`PDFDocument` / `PDFPage`) |
+| **File Sandbox** | Android Context `filesDir` | Apple Foundation `NSFileManager` Documents |
+| **Image Loading** | Coil Compose | UIKit `UIImage` / Coil 3 |
+| **UI Framework** | Jetpack Compose (M3) | Compose Multiplatform & SwiftUI |
 
 ---
 
 ## 📥 Download Release
 
-Download the latest APK from the [Releases](https://github.com/cyberlog69/DocScanner/releases) section:
+Download the latest release from the [Releases](https://github.com/cyberlog69/DocScanner/releases) section:
 - **`app-debug.apk`** with all offline ML models bundled.
+- **`DocScannerKit.framework`** for iOS (compiled via GitHub Actions).
 
 ---
 
@@ -92,5 +84,6 @@ Download the latest APK from the [Releases](https://github.com/cyberlog69/DocSca
 <!-- This app is 100% offline by design -->
 ```
 DocScanner does not require or request network permissions. Your personal files, identity documents, and scanned records never leave your device.
+
 
 
