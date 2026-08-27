@@ -63,18 +63,23 @@ class ScanViewModel(
             _state.update { it.copy(isProcessing = true, processingStep = "Loading ${settings.cameraQuality.badge} images...") }
 
             try {
-                val isAppending = existingDocumentId != null
-                val existingDoc = if (isAppending) repository.getDocumentById(existingDocumentId!!) else null
-                val existingPages = if (isAppending) repository.getPagesForDocumentSync(existingDocumentId!!) else emptyList()
+                val existingDoc = if (existingDocumentId != null) repository.getDocumentById(existingDocumentId) else null
+                val existingPages = if (existingDocumentId != null) repository.getPagesForDocumentSync(existingDocumentId) else emptyList()
                 val startPageIndex = existingPages.size
 
                 val documentId = existingDocumentId ?: UUID.randomUUID().toString()
+
+                val bitmaps: List<Bitmap> = pageUris.mapNotNull { decodeBitmapFromUri(it) }
+                if (bitmaps.isEmpty()) {
+                    _state.update { it.copy(isProcessing = false, error = "Failed to load scanned page images") }
+                    return@launch
+                }
 
                 // Save or preserve thumbnail
                 val thumbnailPath = if (existingDoc?.thumbnailPath.isNullOrBlank()) {
                     fileStorageService.saveThumbnail(bitmaps.first(), documentId)
                 } else {
-                    existingDoc!!.thumbnailPath
+                    existingDoc.thumbnailPath
                 }
 
                 // Save new page images with selected camera quality, offset by startPageIndex

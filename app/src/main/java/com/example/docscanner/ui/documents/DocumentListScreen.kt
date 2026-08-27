@@ -30,13 +30,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.CallMerge
 import androidx.compose.material.icons.automirrored.filled.Label
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Archive
-import androidx.compose.material.icons.filled.CallMerge
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -83,6 +83,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -93,7 +94,7 @@ import coil.compose.AsyncImage
 import com.example.docscanner.model.Document
 import com.example.docscanner.model.DocumentCategory
 import com.example.docscanner.model.SortOrder
-import com.example.docscanner.pref.ScannerPreferences
+import com.example.docscanner.data.pref.ScannerPreferences
 import com.example.docscanner.service.FileStorageService
 import com.example.docscanner.ui.components.DocScannerBrandLogo
 import com.example.docscanner.ui.settings.SettingsDialog
@@ -191,7 +192,7 @@ fun DocumentListScreen(
                             onClick = { showBatchMergeDialog = true },
                             enabled = selectedDocIds.size >= 2
                         ) {
-                            Icon(Icons.Default.CallMerge, contentDescription = "Merge selected documents")
+                            Icon(Icons.AutoMirrored.Filled.CallMerge, contentDescription = "Merge selected documents")
                         }
                         IconButton(onClick = { showBatchExportDialog = true }) {
                             Icon(Icons.Default.Archive, contentDescription = "Export selected as ZIP")

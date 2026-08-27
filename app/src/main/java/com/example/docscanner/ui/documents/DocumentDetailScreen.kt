@@ -98,7 +98,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.docscanner.model.DocumentCategory
 import com.example.docscanner.model.DocumentMetricsCalculator
-import com.example.docscanner.pref.PdfQuality
+import com.example.docscanner.data.pref.PdfQuality
 import com.example.docscanner.service.FileStorageService
 import com.example.docscanner.service.PdfPrintDocumentAdapter
 import com.example.docscanner.ui.components.ZoomableImageDialog

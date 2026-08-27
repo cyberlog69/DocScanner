@@ -1,4 +1,4 @@
-﻿package com.example.docscanner.di
+package com.example.docscanner.di
 
 import com.example.docscanner.data.db.AppDatabase
 import com.example.docscanner.data.db.DocumentDao
@@ -31,7 +31,7 @@ val appModule = module {
     single { PdfGenerator() }
 
     // ViewModels
-    viewModel { DocumentListViewModel(get(), get(), get()) }
+    viewModel { DocumentListViewModel(get(), get(), get(), get()) }
     viewModel { (documentId: String) ->
         DocumentDetailViewModel(get(), get(), get(), get(), get(), documentId)
     }
