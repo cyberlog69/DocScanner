@@ -1,4 +1,4 @@
-﻿plugins {
+plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
 }
@@ -60,6 +60,10 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.fragment.ktx)
     implementation(libs.androidx.biometric)
+
+    // Koin Dependency Injection
+    implementation(libs.koin.android)
+    implementation(libs.koin.androidx.compose)
 
     // Lifecycle
     implementation(libs.androidx.lifecycle.runtime.compose)

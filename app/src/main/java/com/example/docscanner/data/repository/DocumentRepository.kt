@@ -1,62 +1,109 @@
 package com.example.docscanner.data.repository
 
+import android.util.Log
 import com.example.docscanner.data.db.DocumentDao
-import com.example.docscanner.data.model.Document
-import com.example.docscanner.data.model.DocumentCategory
-import com.example.docscanner.data.model.Page
+import com.example.docscanner.model.Document
+import com.example.docscanner.model.DocumentCategory
+import com.example.docscanner.model.Page
+import com.example.docscanner.model.ScannerResult
+import com.example.docscanner.repository.DocumentRepository as IDocumentRepository
 import kotlinx.coroutines.flow.Flow
+
+/**
+ * Concrete Android repository implementation interacting with [DocumentDao].
+ * Wraps database mutations in safe [ScannerResult] values.
+ */
 class DocumentRepository(
     private val documentDao: DocumentDao
-) {
-    fun getAllDocuments(): Flow<List<Document>> = documentDao.getAllDocuments()
+) : IDocumentRepository {
 
-    fun getDocumentsByCategory(category: DocumentCategory): Flow<List<Document>> =
+    override fun getAllDocuments(): Flow<List<Document>> = documentDao.getAllDocuments()
+
+    override fun getDocumentsByCategory(category: DocumentCategory): Flow<List<Document>> =
         documentDao.getDocumentsByCategory(category)
 
-    fun searchDocuments(query: String): Flow<List<Document>> =
+    override fun searchDocuments(query: String): Flow<List<Document>> =
         documentDao.searchDocuments(query)
 
-    suspend fun getDocumentById(id: String): Document? = documentDao.getDocumentById(id)
+    override suspend fun getDocumentById(id: String): Document? = try {
+        documentDao.getDocumentById(id)
+    } catch (e: Exception) {
+        Log.e("DocumentRepository", "Error getting document by id=$id", e)
+        null
+    }
 
-    suspend fun saveDocument(document: Document) = documentDao.insertDocument(document)
+    override suspend fun saveDocument(document: Document): ScannerResult<Unit> = safeDbCall {
+        documentDao.insertDocument(document)
+    }
 
-    suspend fun updateDocument(document: Document) = documentDao.updateDocument(document)
+    override suspend fun updateDocument(document: Document): ScannerResult<Unit> = safeDbCall {
+        documentDao.updateDocument(document)
+    }
 
-    suspend fun deleteDocument(document: Document) {
+    override suspend fun deleteDocument(document: Document): ScannerResult<Unit> = safeDbCall {
         documentDao.deleteAllPagesForDocument(document.id)
         documentDao.deleteDocument(document)
     }
 
-    suspend fun renameDocument(id: String, title: String) = documentDao.renameDocument(id, title)
+    override suspend fun renameDocument(id: String, title: String): ScannerResult<Unit> = safeDbCall {
+        documentDao.renameDocument(id, title)
+    }
 
-    suspend fun updateCategory(id: String, category: DocumentCategory) =
+    override suspend fun updateCategory(id: String, category: DocumentCategory): ScannerResult<Unit> = safeDbCall {
         documentDao.updateCategory(id, category)
+    }
 
-    suspend fun togglePin(id: String, isPinned: Boolean) =
+    override suspend fun togglePin(id: String, isPinned: Boolean): ScannerResult<Unit> = safeDbCall {
         documentDao.togglePin(id, isPinned)
+    }
 
-    suspend fun updateTags(id: String, tags: List<String>) =
+    override suspend fun updateTags(id: String, tags: List<String>): ScannerResult<Unit> = safeDbCall {
         documentDao.updateTags(id, tags)
+    }
 
-    suspend fun updateDocumentMeta(
+    override suspend fun updateDocumentMeta(
         id: String,
         pageCount: Int,
         thumbnailPath: String,
         pdfPath: String,
         extractedText: String
-    ) = documentDao.updateDocumentMeta(id, pageCount, thumbnailPath, pdfPath, extractedText)
+    ): ScannerResult<Unit> = safeDbCall {
+        documentDao.updateDocumentMeta(id, pageCount, thumbnailPath, pdfPath, extractedText)
+    }
 
     // ── Pages ─────────────────────────────────────────────────────────────
 
-    suspend fun savePage(page: Page) = documentDao.insertPage(page)
+    override suspend fun savePage(page: Page): ScannerResult<Unit> = safeDbCall {
+        documentDao.insertPage(page)
+    }
 
-    suspend fun savePages(pages: List<Page>) = documentDao.insertPages(pages)
+    override suspend fun savePages(pages: List<Page>): ScannerResult<Unit> = safeDbCall {
+        documentDao.insertPages(pages)
+    }
 
-    fun getPagesForDocument(documentId: String): Flow<List<Page>> =
+    override fun getPagesForDocument(documentId: String): Flow<List<Page>> =
         documentDao.getPagesForDocument(documentId)
 
-    suspend fun getPagesForDocumentSync(documentId: String): List<Page> =
+    override suspend fun getPagesForDocumentSync(documentId: String): List<Page> = try {
         documentDao.getPagesForDocumentSync(documentId)
+    } catch (e: Exception) {
+        Log.e("DocumentRepository", "Error getting pages for docId=$documentId", e)
+        emptyList()
+    }
 
-    suspend fun deletePage(page: Page) = documentDao.deletePage(page)
+    override suspend fun deletePage(page: Page): ScannerResult<Unit> = safeDbCall {
+        documentDao.deletePage(page)
+    }
+
+    private inline fun safeDbCall(action: () -> Unit): ScannerResult<Unit> = try {
+        action()
+        ScannerResult.Success(Unit)
+    } catch (e: Exception) {
+        Log.e("DocumentRepository", "Database operation failed", e)
+        ScannerResult.Failure.DatabaseError(
+            message = e.localizedMessage ?: "Database operation failed",
+            cause = e
+        )
+    }
 }
+
