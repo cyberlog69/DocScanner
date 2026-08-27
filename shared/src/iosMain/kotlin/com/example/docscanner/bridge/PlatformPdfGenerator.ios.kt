@@ -66,7 +66,7 @@ actual class PlatformPdfGenerator {
                         for ((lineIdx, line) in lines.withIndex()) {
                             val yPos = 20.0 + (lineIdx * lineSpacing)
                             val lineRect = CGRectMake(20.0, yPos, a4Width - 40.0, lineSpacing.coerceAtLeast(14.0))
-                            val nsLine = NSString.create(string = line)
+                            val nsLine = (line as Any) as NSString
                             nsLine.drawInRect(lineRect, withAttributes = attributes)
                         }
                     }
