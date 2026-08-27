@@ -22,8 +22,16 @@ struct SettingsView: View {
                 }
             }
             Section("About") {
-                LabeledContent("Version", value: "1.5.0-beta")
-                LabeledContent("Privacy", value: "100% Offline — No internet")
+                HStack {
+                    Text("Version")
+                    Spacer()
+                    Text("1.5.0-beta").foregroundColor(.secondary)
+                }
+                HStack {
+                    Text("Privacy")
+                    Spacer()
+                    Text("100% Offline — No internet").foregroundColor(.secondary)
+                }
             }
         }
         .navigationTitle("Settings")

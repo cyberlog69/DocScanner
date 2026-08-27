@@ -71,7 +71,7 @@ jobs:
           # Compile Swift sources into executable Mach-O binary
           SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
           swiftc -sdk $SDK_PATH \
-            -target arm64-apple-ios15.0 \
+            -target arm64-apple-ios16.0 \
             -F shared/build/bin/iosArm64/releaseFramework \
             -framework UIKit \
             -framework SwiftUI \
