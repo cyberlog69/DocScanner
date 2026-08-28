@@ -38,7 +38,8 @@ data class ScannerSettingsState(
     val autoOcr: Boolean = true,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val ocrLanguage: OcrLanguage = OcrLanguage.LATIN,
-    val isBiometricLockEnabled: Boolean = false
+    val isBiometricLockEnabled: Boolean = false,
+    val autoCheckUpdates: Boolean = true
 )
 
 class ScannerPreferences(context: Context) {
@@ -51,6 +52,7 @@ class ScannerPreferences(context: Context) {
         private const val KEY_THEME_MODE = "key_theme_mode"
         private const val KEY_OCR_LANGUAGE = "key_ocr_language"
         private const val KEY_BIOMETRIC_LOCK = "key_biometric_lock"
+        private const val KEY_AUTO_CHECK_UPDATES = "key_auto_check_updates"
     }
 
     private val _settings = MutableStateFlow(loadSettings())
@@ -79,6 +81,7 @@ class ScannerPreferences(context: Context) {
     private fun loadSettings(): ScannerSettingsState {
         val autoOcr = prefs.getBoolean(KEY_AUTO_OCR, true)
         val bioLock = prefs.getBoolean(KEY_BIOMETRIC_LOCK, false)
+        val autoCheckUpdates = prefs.getBoolean(KEY_AUTO_CHECK_UPDATES, true)
 
         return ScannerSettingsState(
             cameraQuality = enumPreference(KEY_CAMERA_QUALITY, CameraQuality.HIGH),
@@ -86,7 +89,8 @@ class ScannerPreferences(context: Context) {
             autoOcr = autoOcr,
             themeMode = enumPreference(KEY_THEME_MODE, ThemeMode.SYSTEM),
             ocrLanguage = enumPreference(KEY_OCR_LANGUAGE, OcrLanguage.LATIN),
-            isBiometricLockEnabled = bioLock
+            isBiometricLockEnabled = bioLock,
+            autoCheckUpdates = autoCheckUpdates
         )
     }
 
@@ -118,5 +122,10 @@ class ScannerPreferences(context: Context) {
     fun setBiometricLockEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_BIOMETRIC_LOCK, enabled).apply()
         _settings.value = _settings.value.copy(isBiometricLockEnabled = enabled)
+    }
+
+    fun setAutoCheckUpdates(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_AUTO_CHECK_UPDATES, enabled).apply()
+        _settings.value = _settings.value.copy(autoCheckUpdates = enabled)
     }
 }

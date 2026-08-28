@@ -13,6 +13,10 @@ import com.example.docscanner.data.repository.DocumentRepository
 import com.example.docscanner.service.FileStorageService
 import com.example.docscanner.service.PageData
 import com.example.docscanner.service.PdfGenerator
+import com.example.docscanner.BuildConfig
+import com.example.docscanner.model.AppUpdateInfo
+import com.example.docscanner.model.ScannerResult
+import com.example.docscanner.service.AppUpdateService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -35,13 +39,88 @@ import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
+sealed interface UpdateCheckState {
+    object Idle : UpdateCheckState
+    object Checking : UpdateCheckState
+    data class Available(val updateInfo: AppUpdateInfo) : UpdateCheckState
+    object UpToDate : UpdateCheckState
+    data class Error(val message: String) : UpdateCheckState
+}
+
 @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 class DocumentListViewModel(
     private val repository: DocumentRepository,
     private val fileStorageService: FileStorageService,
     private val pdfGenerator: PdfGenerator,
-    private val preferences: ScannerPreferences
+    private val preferences: ScannerPreferences,
+    private val appUpdateService: AppUpdateService
 ) : ViewModel() {
+
+    private val _updateCheckState = MutableStateFlow<UpdateCheckState>(UpdateCheckState.Idle)
+    val updateCheckState: StateFlow<UpdateCheckState> = _updateCheckState.asStateFlow()
+
+    private val _downloadProgress = MutableStateFlow<Float?>(null)
+    val downloadProgress: StateFlow<Float?> = _downloadProgress.asStateFlow()
+
+    private val _isBannerDismissed = MutableStateFlow(false)
+    val isBannerDismissed: StateFlow<Boolean> = _isBannerDismissed.asStateFlow()
+
+    init {
+        if (preferences.settings.value.autoCheckUpdates) {
+            checkForUpdates(BuildConfig.VERSION_NAME, isManual = false)
+        }
+    }
+
+    fun dismissUpdateBanner() {
+        _isBannerDismissed.value = true
+    }
+
+    fun resetUpdateState() {
+        _updateCheckState.value = UpdateCheckState.Idle
+        _downloadProgress.value = null
+    }
+
+    fun checkForUpdates(currentVersion: String = BuildConfig.VERSION_NAME, isManual: Boolean = false) {
+        viewModelScope.launch {
+            _updateCheckState.value = UpdateCheckState.Checking
+            when (val result = appUpdateService.checkForUpdates(currentVersion)) {
+                is ScannerResult.Success -> {
+                    if (result.data.hasUpdate) {
+                        _updateCheckState.value = UpdateCheckState.Available(result.data)
+                        _isBannerDismissed.value = false
+                    } else {
+                        _updateCheckState.value = UpdateCheckState.UpToDate
+                    }
+                }
+                is ScannerResult.Failure -> {
+                    if (isManual) {
+                        _updateCheckState.value = UpdateCheckState.Error(result.message)
+                    } else {
+                        _updateCheckState.value = UpdateCheckState.Idle
+                    }
+                }
+            }
+        }
+    }
+
+    fun downloadAndInstall(appUpdateInfo: AppUpdateInfo, context: Context) {
+        val downloadUrl = appUpdateInfo.downloadUrl ?: return
+        viewModelScope.launch {
+            _downloadProgress.value = 0f
+            when (val result = appUpdateService.downloadApk(downloadUrl) { progress, _, _ ->
+                _downloadProgress.value = progress
+            }) {
+                is ScannerResult.Success -> {
+                    _downloadProgress.value = 1f
+                    appUpdateService.installApk(context, result.data)
+                }
+                is ScannerResult.Failure -> {
+                    _downloadProgress.value = null
+                    _updateCheckState.value = UpdateCheckState.Error(result.message)
+                }
+            }
+        }
+    }
 
     private val _selectedCategory = MutableStateFlow(DocumentCategory.ALL)
     val selectedCategory: StateFlow<DocumentCategory> = _selectedCategory.asStateFlow()

@@ -26,6 +26,7 @@ class AppContainer(val context: Context) {
     val documentScannerService: DocumentScannerService by lazy { DocumentScannerService(context) }
     val pdfGenerator: PdfGenerator by lazy { PdfGenerator() }
     val fileStorageService: FileStorageService by lazy { FileStorageService(context) }
+    val appUpdateService: com.example.docscanner.service.AppUpdateService by lazy { com.example.docscanner.service.AppUpdateService(context) }
 }
 
 class DocScannerApp : Application() {

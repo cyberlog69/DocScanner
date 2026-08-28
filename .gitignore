@@ -11,5 +11,7 @@ captures/
 .cxx
 local.properties
 *.apk
+*.ipa
+releases/
 .kotlin/
 

@@ -8,6 +8,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -74,6 +75,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -91,12 +93,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import androidx.compose.material.icons.filled.SystemUpdate
 import com.example.docscanner.model.Document
 import com.example.docscanner.model.DocumentCategory
 import com.example.docscanner.model.SortOrder
 import com.example.docscanner.data.pref.ScannerPreferences
 import com.example.docscanner.service.FileStorageService
 import com.example.docscanner.ui.components.DocScannerBrandLogo
+import com.example.docscanner.ui.components.UpdateAvailableDialog
 import com.example.docscanner.ui.settings.SettingsDialog
 import com.example.docscanner.ui.util.HapticHelper
 import kotlinx.coroutines.launch
@@ -120,6 +124,9 @@ fun DocumentListScreen(
     val sortOrder by viewModel.sortOrder.collectAsStateWithLifecycle()
     val selectedDocIds by viewModel.selectedDocIds.collectAsStateWithLifecycle()
     val totalStorageBytes by viewModel.totalStorageBytes.collectAsStateWithLifecycle()
+    val updateCheckState by viewModel.updateCheckState.collectAsStateWithLifecycle()
+    val downloadProgress by viewModel.downloadProgress.collectAsStateWithLifecycle()
+    val isBannerDismissed by viewModel.isBannerDismissed.collectAsStateWithLifecycle()
 
     val isSelectionMode = selectedDocIds.isNotEmpty()
     val haptic = LocalHapticFeedback.current
@@ -133,6 +140,7 @@ fun DocumentListScreen(
     }
 
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
     var showBatchCategoryDialog by remember { mutableStateOf(false) }
     var showBatchDeleteDialog by remember { mutableStateOf(false) }
@@ -149,6 +157,13 @@ fun DocumentListScreen(
 
     BackHandler(enabled = isSelectionMode) {
         viewModel.clearSelection()
+    }
+
+    LaunchedEffect(updateCheckState) {
+        if (updateCheckState is UpdateCheckState.Available && showSettingsDialog) {
+            showSettingsDialog = false
+            showUpdateDialog = true
+        }
     }
 
     Scaffold(
@@ -338,6 +353,60 @@ fun DocumentListScreen(
                 ) {}
             }
 
+            // In-App Update Alert Banner (when update available and not dismissed)
+            val availableUpdate = (updateCheckState as? UpdateCheckState.Available)?.updateInfo
+            if (availableUpdate != null && !isBannerDismissed) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .clickable { showUpdateDialog = true }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SystemUpdate,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "DocScanner v${availableUpdate.latestVersion} Available!",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                text = "Tap to view changelog & update",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                            )
+                        }
+                        IconButton(
+                            onClick = { viewModel.dismissUpdateBanner() },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Dismiss",
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
             // Category filter chips
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 16.dp),
@@ -472,7 +541,24 @@ fun DocumentListScreen(
     if (showSettingsDialog) {
         SettingsDialog(
             preferences = preferences,
+            updateCheckState = updateCheckState,
+            onCheckForUpdates = {
+                viewModel.checkForUpdates(isManual = true)
+            },
             onDismiss = { showSettingsDialog = false }
+        )
+    }
+
+    // In-App Update Dialog
+    val currentUpdate = (updateCheckState as? UpdateCheckState.Available)?.updateInfo
+    if (showUpdateDialog && currentUpdate != null) {
+        UpdateAvailableDialog(
+            updateInfo = currentUpdate,
+            downloadProgress = downloadProgress,
+            onDownloadAndInstall = {
+                viewModel.downloadAndInstall(currentUpdate, context)
+            },
+            onDismiss = { showUpdateDialog = false }
         )
     }
 

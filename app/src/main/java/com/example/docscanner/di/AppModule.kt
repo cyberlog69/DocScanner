@@ -29,9 +29,10 @@ val appModule = module {
     single { DocumentScannerService(get()) }
     single { OcrService(get()) }
     single { PdfGenerator() }
+    single { com.example.docscanner.service.AppUpdateService(get()) }
 
     // ViewModels
-    viewModel { DocumentListViewModel(get(), get(), get(), get()) }
+    viewModel { DocumentListViewModel(get(), get(), get(), get(), get()) }
     viewModel { (documentId: String) ->
         DocumentDetailViewModel(get(), get(), get(), get(), get(), documentId)
     }

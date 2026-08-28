@@ -3,4 +3,5 @@
     <files-path name="documents" path="documents/" />
     <files-path name="thumbnails" path="thumbnails/" />
     <cache-path name="cache" path="/" />
+    <cache-path name="updates" path="updates/" />
 </paths>

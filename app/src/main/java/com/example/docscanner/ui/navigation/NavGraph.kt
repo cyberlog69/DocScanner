@@ -59,7 +59,8 @@ fun DocScannerNavHost(
                             repository = appContainer.repository,
                             fileStorageService = appContainer.fileStorageService,
                             pdfGenerator = appContainer.pdfGenerator,
-                            preferences = appContainer.preferences
+                            preferences = appContainer.preferences,
+                            appUpdateService = appContainer.appUpdateService
                         ) as T
                     }
                 }
