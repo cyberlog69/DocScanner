@@ -27,6 +27,8 @@ class AppContainer(val context: Context) {
     val pdfGenerator: PdfGenerator by lazy { PdfGenerator() }
     val fileStorageService: FileStorageService by lazy { FileStorageService(context) }
     val appUpdateService: com.example.docscanner.service.AppUpdateService by lazy { com.example.docscanner.service.AppUpdateService(context) }
+    val biometricAuthManager: com.example.docscanner.service.BiometricAuthManager by lazy { com.example.docscanner.service.BiometricAuthManager(context) }
+    val appSecurityManager: com.example.docscanner.service.AppSecurityManager by lazy { com.example.docscanner.service.AppSecurityManager(context, preferences, biometricAuthManager) }
 }
 
 class DocScannerApp : Application() {

@@ -45,11 +45,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.content.Intent
+import android.provider.Settings
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.fragment.app.FragmentActivity
 import com.example.docscanner.data.pref.CameraQuality
 import com.example.docscanner.data.pref.PdfQuality
 import com.example.docscanner.data.pref.ScannerPreferences
 import com.example.docscanner.data.pref.ThemeMode
-
+import com.example.docscanner.service.BiometricAuthManager
 import com.example.docscanner.ui.documents.UpdateCheckState
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -62,6 +71,8 @@ fun SettingsDialog(
 ) {
     val settings by preferences.settings.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val context = LocalContext.current
+    var showEnrollmentWarning by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -475,7 +486,43 @@ fun SettingsDialog(
                     Spacer(modifier = Modifier.width(8.dp))
                     Switch(
                         checked = settings.isBiometricLockEnabled,
-                        onCheckedChange = { preferences.setBiometricLockEnabled(it) }
+                        onCheckedChange = { enabled ->
+                            val activity = context as? FragmentActivity
+                            val biometricAuthManager = BiometricAuthManager(context)
+                            val status = biometricAuthManager.canAuthenticate()
+
+                            if (enabled) {
+                                if (!status.isAvailable) {
+                                    showEnrollmentWarning = true
+                                } else if (activity != null) {
+                                    biometricAuthManager.authenticate(
+                                        activity = activity,
+                                        title = "Confirm Identity",
+                                        subtitle = "Scan biometric or enter PIN to enable App Lock"
+                                    ) { result ->
+                                        if (result.isSuccess) {
+                                            preferences.setBiometricLockEnabled(true)
+                                        }
+                                    }
+                                } else {
+                                    preferences.setBiometricLockEnabled(true)
+                                }
+                            } else {
+                                if (status.isAvailable && activity != null) {
+                                    biometricAuthManager.authenticate(
+                                        activity = activity,
+                                        title = "Confirm Identity",
+                                        subtitle = "Scan biometric or enter PIN to disable App Lock"
+                                    ) { result ->
+                                        if (result.isSuccess) {
+                                            preferences.setBiometricLockEnabled(false)
+                                        }
+                                    }
+                                } else {
+                                    preferences.setBiometricLockEnabled(false)
+                                }
+                            }
+                        }
                     )
                 }
             }
@@ -605,5 +652,41 @@ fun SettingsDialog(
                 textAlign = TextAlign.Center
             )
         }
+    }
+
+    if (showEnrollmentWarning) {
+        AlertDialog(
+            onDismissRequest = { showEnrollmentWarning = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Lock,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            },
+            title = { Text("No Screen Lock Found") },
+            text = {
+                Text("To enable App Lock, your device must have a screen lock configured (Fingerprint, Face, PIN, or Pattern). Please set one up in Android Settings first.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showEnrollmentWarning = false
+                        try {
+                            context.startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS))
+                        } catch (_: Exception) {
+                            context.startActivity(Intent(Settings.ACTION_SETTINGS))
+                        }
+                    }
+                ) {
+                    Text("Open Settings")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEnrollmentWarning = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }

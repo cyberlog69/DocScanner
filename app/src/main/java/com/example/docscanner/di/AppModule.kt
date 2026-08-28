@@ -30,6 +30,8 @@ val appModule = module {
     single { OcrService(get()) }
     single { PdfGenerator() }
     single { com.example.docscanner.service.AppUpdateService(get()) }
+    single { com.example.docscanner.service.BiometricAuthManager(get()) }
+    single { com.example.docscanner.service.AppSecurityManager(get(), get(), get()) }
 
     // ViewModels
     viewModel { DocumentListViewModel(get(), get(), get(), get(), get()) }
