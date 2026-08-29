@@ -62,8 +62,11 @@ jobs:
         run: |
           mkdir -p build/ios/Payload/DocScanner.app/Frameworks
           
-          # Copy compiled KMP framework
+          # Copy compiled KMP framework and strip developer-only SDK headers/modules
           cp -R shared/build/bin/iosArm64/releaseFramework/DocScannerKit.framework build/ios/Payload/DocScanner.app/Frameworks/
+          rm -rf build/ios/Payload/DocScanner.app/Frameworks/DocScannerKit.framework/Headers
+          rm -rf build/ios/Payload/DocScanner.app/Frameworks/DocScannerKit.framework/Modules
+          rm -rf build/ios/Payload/DocScanner.app/Frameworks/DocScannerKit.framework/_CodeSignature
           
           # Copy Info.plist and enforce explicit bundle properties for Sideloadly / AltStore
           cp iosApp/iosApp/Info.plist build/ios/Payload/DocScanner.app/Info.plist
@@ -75,6 +78,7 @@ jobs:
           plutil -replace CFBundleDevelopmentRegion -string "en" build/ios/Payload/DocScanner.app/Info.plist
           plutil -replace CFBundleShortVersionString -string "1.6.0" build/ios/Payload/DocScanner.app/Info.plist
           plutil -replace CFBundleVersion -string "6" build/ios/Payload/DocScanner.app/Info.plist
+          plutil -replace MinimumOSVersion -string "16.0" build/ios/Payload/DocScanner.app/Info.plist
           
           # Compile Swift sources into executable Mach-O binary
           SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
@@ -97,9 +101,9 @@ jobs:
             iosApp/iosApp/DocumentDetailView.swift \
             iosApp/iosApp/SettingsView.swift
           
-          # Ad-hoc codesign to establish valid Mach-O signature table for sideloaders
-          codesign --force --deep --sign - build/ios/Payload/DocScanner.app/Frameworks/DocScannerKit.framework
-          codesign --force --deep --sign - build/ios/Payload/DocScanner.app
+          # Clean any detached signatures so Sideloadly / AltStore re-signs cleanly without parser errors
+          rm -rf build/ios/Payload/DocScanner.app/_CodeSignature
+          rm -rf build/ios/Payload/DocScanner.app/Frameworks/DocScannerKit.framework/_CodeSignature
           
           # Package into .ipa archive
           cd build/ios
