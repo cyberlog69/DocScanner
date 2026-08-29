@@ -60,13 +60,7 @@ jobs:
 
       - name: Package iOS .ipa for Sideloading
         run: |
-          mkdir -p build/ios/Payload/DocScanner.app/Frameworks
-          
-          # Copy compiled KMP framework and strip developer-only SDK headers/modules
-          cp -R shared/build/bin/iosArm64/releaseFramework/DocScannerKit.framework build/ios/Payload/DocScanner.app/Frameworks/
-          rm -rf build/ios/Payload/DocScanner.app/Frameworks/DocScannerKit.framework/Headers
-          rm -rf build/ios/Payload/DocScanner.app/Frameworks/DocScannerKit.framework/Modules
-          rm -rf build/ios/Payload/DocScanner.app/Frameworks/DocScannerKit.framework/_CodeSignature
+          mkdir -p build/ios/Payload/DocScanner.app
           
           # Copy Info.plist and enforce explicit bundle properties for Sideloadly / AltStore
           cp iosApp/iosApp/Info.plist build/ios/Payload/DocScanner.app/Info.plist
@@ -80,7 +74,7 @@ jobs:
           plutil -replace CFBundleVersion -string "6" build/ios/Payload/DocScanner.app/Info.plist
           plutil -replace MinimumOSVersion -string "16.0" build/ios/Payload/DocScanner.app/Info.plist
           
-          # Compile Swift sources into executable Mach-O binary
+          # Compile Swift sources and statically link DocScannerKit into single executable Mach-O binary
           SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
           swiftc -sdk $SDK_PATH \
             -target arm64-apple-ios16.0 \
@@ -92,7 +86,6 @@ jobs:
             -framework LocalAuthentication \
             -framework PDFKit \
             -framework DocScannerKit \
-            -Xlinker -rpath -Xlinker @executable_path/Frameworks \
             -o build/ios/Payload/DocScanner.app/DocScanner \
             iosApp/iosApp/iOSApp.swift \
             iosApp/iosApp/ContentView.swift \
@@ -101,9 +94,8 @@ jobs:
             iosApp/iosApp/DocumentDetailView.swift \
             iosApp/iosApp/SettingsView.swift
           
-          # Clean any detached signatures so Sideloadly / AltStore re-signs cleanly without parser errors
+          # Ensure clean bundle for Sideloadly / AltStore signing
           rm -rf build/ios/Payload/DocScanner.app/_CodeSignature
-          rm -rf build/ios/Payload/DocScanner.app/Frameworks/DocScannerKit.framework/_CodeSignature
           
           # Package into .ipa archive
           cd build/ios
