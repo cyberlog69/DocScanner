@@ -1,0 +1,5 @@
+- In-App Updates: Automated GitHub Releases update checker and downloader
+- Biometric Security: 30s background lock grace period and session unlock persistence
+- Phase 1 Features: One-tap Copy/Share All OCR text, Wi-Fi printing, and paper size diagnostics
+- Architecture: Koin 4.0 Multiplatform DI and AGP 9.0+ compatibility
+- 100% Offline & Open Source

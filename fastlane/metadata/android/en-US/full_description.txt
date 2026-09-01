@@ -1,0 +1,17 @@
+DocScanner is a 100% offline, privacy-first mobile document scanner with on-device OCR and searchable PDF generation for Android.
+
+Designed from the ground up to operate completely offline, DocScanner delivers professional document capture, optical character recognition (OCR), and searchable PDF compilation without requiring any cloud services or network access.
+
+Key Features:
+- Smart Document Capture: Automatic edge detection, perspective correction, and custom quality profiles (1080p, 2K, 4K UHD / 600 DPI).
+- Offline Multi-Language OCR: Bundled on-device text recognition supporting Latin, Devanagari (Hindi/Marathi/Sanskrit), Simplified Chinese, Japanese, and Korean.
+- Searchable PDF Generation: Creates standard PDF documents with invisible selectable OCR text layers using iText 7.
+- Full-Text Search: Ultra-fast offline indexing via SQLite FTS4 allows you to find documents by words inside the text or title.
+- Smart Auto-Categorization: Automatically suggests categories (Receipts, Invoices, ID Cards, Contracts, Books, Notes) based on recognized text keywords.
+- Biometric App Lock: Secure documents using Fingerprint, Face Unlock, or Device PIN/Pattern with a 30-second background grace period.
+- Wi-Fi & Virtual Printing: Send documents directly to nearby network printers using native Android PrintManager without internet access.
+- Document Diagnostics: Shows pixel dimensions and estimated physical paper sizes (A4, US Letter, US Legal, ID Card, Receipt).
+- One-Tap Copy & Share: Easily copy extracted text or share PDFs with tactile haptic feedback.
+
+Privacy Guarantee:
+All document scans, OCR text extraction, database queries, and PDF generation execute purely on your device. Zero tracking, zero analytics, zero ads.
