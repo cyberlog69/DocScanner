@@ -119,6 +119,18 @@ class DocumentStore: ObservableObject {
             saveDocuments()
         }
     }
+
+    func updateDocumentOcr(docId: String, newText: String, category: String? = nil) {
+        if let index = documents.firstIndex(where: { $0.id == docId }) {
+            documents[index].extractedText = newText
+            if let cat = category, !cat.isEmpty {
+                documents[index].category = cat
+            }
+            DispatchQueue.main.async {
+                self.saveDocuments()
+            }
+        }
+    }
 }
 
 /// Document list screen — mirrors Android DocumentListScreen.kt
@@ -129,6 +141,8 @@ struct DocumentListView: View {
     @State private var isShowingScanner = false
     @State private var isShowingSettings = false
     @State private var isGridView = true
+    @State private var isProcessingOcr = false
+    @State private var ocrStatusMessage = ""
 
     let categories = ["All", "Receipts", "ID Cards", "Notes", "Contracts", "Invoices", "Books", "Other"]
 
@@ -249,13 +263,22 @@ struct DocumentListView: View {
         }
         .sheet(isPresented: $isShowingScanner) {
             ScannerView { images in
-                if !images.isEmpty {
+                guard !images.isEmpty else { return }
+                isProcessingOcr = true
+                ocrStatusMessage = "Extracting text with Neural Engine (\(images.count) page\(images.count > 1 ? "s" : ""))..."
+
+                OcrService.shared.recognizeText(from: images) { pages, combinedText in
+                    let fallbackTitle = "Scan \(DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .short))"
+                    let smartTitle = OcrService.shared.extractSmartTitle(from: combinedText, fallback: fallbackTitle)
+                    let autoCategory = OcrService.shared.classifyCategory(from: combinedText)
+
                     store.addDocument(
-                        title: "Scan \(DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .short))",
-                        category: "Notes",
+                        title: smartTitle,
+                        category: autoCategory,
                         pageImages: images,
-                        extractedText: ""
+                        extractedText: combinedText
                     )
+                    isProcessingOcr = false
                 }
             }
         }
@@ -264,6 +287,30 @@ struct DocumentListView: View {
                 SettingsView()
             }
         }
+        .overlay(
+            Group {
+                if isProcessingOcr {
+                    ZStack {
+                        Color.black.opacity(0.4).ignoresSafeArea()
+                        VStack(spacing: 16) {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .scaleEffect(1.4)
+                            Text("Apple Neural Engine OCR")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                            Text(ocrStatusMessage)
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.85))
+                        }
+                        .padding(24)
+                        .background(Color(UIColor.darkGray).opacity(0.92))
+                        .cornerRadius(16)
+                        .shadow(radius: 10)
+                    }
+                }
+            }
+        )
     }
 }
 

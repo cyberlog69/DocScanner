@@ -92,7 +92,19 @@ jobs:
             iosApp/iosApp/ScannerView.swift \
             iosApp/iosApp/DocumentListView.swift \
             iosApp/iosApp/DocumentDetailView.swift \
-            iosApp/iosApp/SettingsView.swift
+            iosApp/iosApp/SettingsView.swift \
+            iosApp/iosApp/OcrService.swift
+          
+          # Copy app icons and compile Assets.car catalog for Springboard / Home Screen display
+          cp iosApp/iosApp/*.png build/ios/Payload/DocScanner.app/ 2>/dev/null || true
+          if [ -d "iosApp/iosApp/Assets.xcassets" ]; then
+            xcrun actool iosApp/iosApp/Assets.xcassets \
+              --compile build/ios/Payload/DocScanner.app \
+              --platform iphoneos \
+              --minimum-deployment-target 16.0 \
+              --app-icon AppIcon \
+              --output-partial-info-plist build/ios/partial-info.plist 2>/dev/null || true
+          fi
           
           # Ensure clean bundle for Sideloadly / AltStore signing
           rm -rf build/ios/Payload/DocScanner.app/_CodeSignature
