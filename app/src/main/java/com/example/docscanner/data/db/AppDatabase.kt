@@ -19,11 +19,12 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
 
     companion object {
         const val DATABASE_NAME = "docscanner.db"
-        const val DATABASE_VERSION = 4   // v3→v4: added tags column and FTS tags indexing
+        const val DATABASE_VERSION = 5   // v4→v5: added isVault, folderId columns and folders table
 
         const val TABLE_DOCUMENTS = "documents"
         const val TABLE_PAGES = "pages"
         const val TABLE_DOCUMENTS_FTS = "documents_fts"
+        const val TABLE_FOLDERS = "folders"
     }
 
     private val changeNotifier = MutableStateFlow(System.currentTimeMillis())
@@ -53,7 +54,20 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                 pdfPath TEXT NOT NULL,
                 extractedText TEXT NOT NULL,
                 isPinned INTEGER NOT NULL DEFAULT 0,
-                tags TEXT NOT NULL DEFAULT ''
+                tags TEXT NOT NULL DEFAULT '',
+                isVault INTEGER NOT NULL DEFAULT 0,
+                folderId TEXT DEFAULT NULL
+            )
+            """.trimIndent()
+        )
+
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS $TABLE_FOLDERS (
+                id TEXT PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL,
+                color INTEGER NOT NULL DEFAULT 0,
+                createdAt INTEGER NOT NULL
             )
             """.trimIndent()
         )
@@ -215,6 +229,44 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
             }
             version = 4
         }
+
+        // v4 → v5: Add isVault, folderId columns safely and create folders table
+        if (version < 5) {
+            try {
+                val cursor = db.rawQuery("PRAGMA table_info($TABLE_DOCUMENTS)", null)
+                var hasIsVault = false
+                var hasFolderId = false
+                cursor.use { c ->
+                    val nameIdx = c.getColumnIndex("name")
+                    while (c.moveToNext()) {
+                        if (nameIdx >= 0) {
+                            val name = c.getString(nameIdx)
+                            if (name == "isVault") hasIsVault = true
+                            if (name == "folderId") hasFolderId = true
+                        }
+                    }
+                }
+                if (!hasIsVault) {
+                    db.execSQL("ALTER TABLE $TABLE_DOCUMENTS ADD COLUMN isVault INTEGER NOT NULL DEFAULT 0")
+                }
+                if (!hasFolderId) {
+                    db.execSQL("ALTER TABLE $TABLE_DOCUMENTS ADD COLUMN folderId TEXT DEFAULT NULL")
+                }
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS $TABLE_FOLDERS (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        name TEXT NOT NULL,
+                        color INTEGER NOT NULL DEFAULT 0,
+                        createdAt INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+            } catch (e: Exception) {
+                Log.e("AppDatabase", "Error migrating database to v5 (isVault, folderId, folders table)", e)
+            }
+            version = 5
+        }
     }
 
     // ── Document DAO Implementation ───────────────────────────────────────────
@@ -232,6 +284,8 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
             put("extractedText", document.extractedText)
             put("isPinned", if (document.isPinned) 1 else 0)
             put("tags", document.tagsToDbString())
+            put("isVault", if (document.isVault) 1 else 0)
+            put("folderId", document.folderId)
         }
         writableDatabase.insertWithOnConflict(TABLE_DOCUMENTS, null, values, SQLiteDatabase.CONFLICT_REPLACE)
         updateFts(document.id, document.title, document.extractedText, document.tagsToDbString())
@@ -249,6 +303,8 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
             put("extractedText", document.extractedText)
             put("isPinned", if (document.isPinned) 1 else 0)
             put("tags", document.tagsToDbString())
+            put("isVault", if (document.isVault) 1 else 0)
+            put("folderId", document.folderId)
         }
         writableDatabase.update(TABLE_DOCUMENTS, values, "id = ?", arrayOf(document.id))
         updateFts(document.id, document.title, document.extractedText, document.tagsToDbString())
@@ -265,7 +321,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
     override fun getAllDocuments(): Flow<List<Document>> {
         return changeNotifier.map {
             withContext(Dispatchers.IO) {
-                queryDocuments("SELECT * FROM $TABLE_DOCUMENTS ORDER BY isPinned DESC, createdAt DESC", null)
+                queryDocuments("SELECT * FROM $TABLE_DOCUMENTS WHERE isVault = 0 ORDER BY isPinned DESC, createdAt DESC", null)
             }
         }
     }
@@ -274,11 +330,107 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         return changeNotifier.map {
             withContext(Dispatchers.IO) {
                 queryDocuments(
-                    "SELECT * FROM $TABLE_DOCUMENTS WHERE category = ? ORDER BY isPinned DESC, createdAt DESC",
+                    "SELECT * FROM $TABLE_DOCUMENTS WHERE category = ? AND isVault = 0 ORDER BY isPinned DESC, createdAt DESC",
                     arrayOf(category.name)   // Match by enum name, not ordinal
                 )
             }
         }
+    }
+
+    override fun getVaultDocuments(): Flow<List<Document>> {
+        return changeNotifier.map {
+            withContext(Dispatchers.IO) {
+                queryDocuments("SELECT * FROM $TABLE_DOCUMENTS WHERE isVault = 1 ORDER BY isPinned DESC, createdAt DESC", null)
+            }
+        }
+    }
+
+    override fun getDocumentsByFolder(folderId: String): Flow<List<Document>> {
+        return changeNotifier.map {
+            withContext(Dispatchers.IO) {
+                queryDocuments(
+                    "SELECT * FROM $TABLE_DOCUMENTS WHERE folderId = ? AND isVault = 0 ORDER BY isPinned DESC, createdAt DESC",
+                    arrayOf(folderId)
+                )
+            }
+        }
+    }
+
+    override suspend fun setVaultStatus(id: String, isVault: Boolean, now: Long): Unit = withContext(Dispatchers.IO) {
+        val values = ContentValues().apply {
+            put("isVault", if (isVault) 1 else 0)
+            put("modifiedAt", now)
+        }
+        writableDatabase.update(TABLE_DOCUMENTS, values, "id = ?", arrayOf(id))
+        notifyChanged()
+    }
+
+    override suspend fun setDocumentFolder(id: String, folderId: String?, now: Long): Unit = withContext(Dispatchers.IO) {
+        val values = ContentValues().apply {
+            put("folderId", folderId)
+            put("modifiedAt", now)
+        }
+        writableDatabase.update(TABLE_DOCUMENTS, values, "id = ?", arrayOf(id))
+        notifyChanged()
+    }
+
+    override suspend fun insertFolder(folder: com.example.docscanner.data.model.Folder): Unit = withContext(Dispatchers.IO) {
+        val values = ContentValues().apply {
+            put("id", folder.id)
+            put("name", folder.name)
+            put("color", folder.color)
+            put("createdAt", folder.createdAt)
+        }
+        writableDatabase.insertWithOnConflict(TABLE_FOLDERS, null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        notifyChanged()
+    }
+
+    override suspend fun updateFolder(folder: com.example.docscanner.data.model.Folder): Unit = withContext(Dispatchers.IO) {
+        val values = ContentValues().apply {
+            put("name", folder.name)
+            put("color", folder.color)
+        }
+        writableDatabase.update(TABLE_FOLDERS, values, "id = ?", arrayOf(folder.id))
+        notifyChanged()
+    }
+
+    override suspend fun deleteFolder(folderId: String): Unit = withContext(Dispatchers.IO) {
+        val values = ContentValues().apply {
+            putNull("folderId")
+        }
+        writableDatabase.update(TABLE_DOCUMENTS, values, "folderId = ?", arrayOf(folderId))
+        writableDatabase.delete(TABLE_FOLDERS, "id = ?", arrayOf(folderId))
+        notifyChanged()
+    }
+
+    override fun getAllFolders(): Flow<List<com.example.docscanner.data.model.Folder>> {
+        return changeNotifier.map {
+            withContext(Dispatchers.IO) {
+                getAllFoldersSync()
+            }
+        }
+    }
+
+    override suspend fun getAllFoldersSync(): List<com.example.docscanner.data.model.Folder> = withContext(Dispatchers.IO) {
+        val list = mutableListOf<com.example.docscanner.data.model.Folder>()
+        val cursor = readableDatabase.rawQuery("SELECT * FROM $TABLE_FOLDERS ORDER BY createdAt ASC", null)
+        cursor.use { c ->
+            val idIdx = c.getColumnIndexOrThrow("id")
+            val nameIdx = c.getColumnIndexOrThrow("name")
+            val colorIdx = c.getColumnIndexOrThrow("color")
+            val createdAtIdx = c.getColumnIndexOrThrow("createdAt")
+            while (c.moveToNext()) {
+                list.add(
+                    com.example.docscanner.data.model.Folder(
+                        id = c.getString(idIdx),
+                        name = c.getString(nameIdx),
+                        color = c.getInt(colorIdx),
+                        createdAt = c.getLong(createdAtIdx)
+                    )
+                )
+            }
+        }
+        list
     }
 
     override suspend fun getDocumentById(id: String): Document? = withContext(Dispatchers.IO) {
@@ -359,7 +511,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
             withContext(Dispatchers.IO) {
                 val cleanQuery = query.trim()
                 if (cleanQuery.isEmpty()) {
-                    queryDocuments("SELECT * FROM $TABLE_DOCUMENTS ORDER BY isPinned DESC, createdAt DESC", null)
+                    queryDocuments("SELECT * FROM $TABLE_DOCUMENTS WHERE isVault = 0 ORDER BY isPinned DESC, createdAt DESC", null)
                 } else {
                     try {
                         // Build an FTS4 MATCH expression with a prefix wildcard on each quoted token.
@@ -369,7 +521,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                             """
                             SELECT d.* FROM $TABLE_DOCUMENTS d
                             INNER JOIN $TABLE_DOCUMENTS_FTS fts ON fts.docid = d.rowid
-                            WHERE $TABLE_DOCUMENTS_FTS MATCH ?
+                            WHERE $TABLE_DOCUMENTS_FTS MATCH ? AND d.isVault = 0
                             ORDER BY d.isPinned DESC, d.createdAt DESC
                             """.trimIndent(),
                             arrayOf(ftsQuery)
@@ -379,7 +531,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                         queryDocuments(
                             """
                             SELECT * FROM $TABLE_DOCUMENTS
-                            WHERE title LIKE ? OR extractedText LIKE ? OR tags LIKE ?
+                            WHERE (title LIKE ? OR extractedText LIKE ? OR tags LIKE ?) AND isVault = 0
                             ORDER BY isPinned DESC, createdAt DESC
                             """.trimIndent(),
                             arrayOf("%$cleanQuery%", "%$cleanQuery%", "%$cleanQuery%")
@@ -503,10 +655,14 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
             val extractedTextIdx = c.getColumnIndexOrThrow("extractedText")
             val isPinnedIdx = c.getColumnIndex("isPinned")
             val tagsIdx = c.getColumnIndex("tags")
+            val isVaultIdx = c.getColumnIndex("isVault")
+            val folderIdIdx = c.getColumnIndex("folderId")
 
             while (c.moveToNext()) {
                 val isPinned = if (isPinnedIdx >= 0) c.getInt(isPinnedIdx) == 1 else false
                 val tags = if (tagsIdx >= 0) Document.parseTagsString(c.getString(tagsIdx)) else emptyList()
+                val isVault = if (isVaultIdx >= 0) c.getInt(isVaultIdx) == 1 else false
+                val folderId = if (folderIdIdx >= 0) c.getString(folderIdIdx) else null
                 list.add(
                     Document(
                         id = c.getString(idIdx),
@@ -519,7 +675,9 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                         pdfPath = c.getString(pdfPathIdx),
                         extractedText = c.getString(extractedTextIdx),
                         isPinned = isPinned,
-                        tags = tags
+                        tags = tags,
+                        isVault = isVault,
+                        folderId = folderId
                     )
                 )
             }

@@ -11,6 +11,7 @@ interface DocumentDao {
     suspend fun deleteDocument(document: Document)
     fun getAllDocuments(): Flow<List<Document>>
     fun getDocumentsByCategory(category: DocumentCategory): Flow<List<Document>>
+    fun searchDocuments(query: String): Flow<List<Document>>
     suspend fun getDocumentById(id: String): Document?
     suspend fun renameDocument(id: String, title: String, now: Long = System.currentTimeMillis())
     suspend fun updateCategory(id: String, category: DocumentCategory, now: Long = System.currentTimeMillis())
@@ -24,7 +25,15 @@ interface DocumentDao {
         text: String,
         now: Long = System.currentTimeMillis()
     )
-    fun searchDocuments(query: String): Flow<List<Document>>
+    suspend fun setVaultStatus(id: String, isVault: Boolean, now: Long = System.currentTimeMillis())
+    suspend fun setDocumentFolder(id: String, folderId: String?, now: Long = System.currentTimeMillis())
+    fun getVaultDocuments(): Flow<List<Document>>
+    fun getDocumentsByFolder(folderId: String): Flow<List<Document>>
+    suspend fun insertFolder(folder: com.example.docscanner.data.model.Folder)
+    suspend fun updateFolder(folder: com.example.docscanner.data.model.Folder)
+    suspend fun deleteFolder(folderId: String)
+    fun getAllFolders(): Flow<List<com.example.docscanner.data.model.Folder>>
+    suspend fun getAllFoldersSync(): List<com.example.docscanner.data.model.Folder>
     suspend fun insertPage(page: Page)
     suspend fun insertPages(pages: List<Page>)
     fun getPagesForDocument(documentId: String): Flow<List<Page>>

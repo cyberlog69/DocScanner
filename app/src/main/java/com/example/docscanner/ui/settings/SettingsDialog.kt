@@ -58,21 +58,87 @@ import com.example.docscanner.data.pref.CameraQuality
 import com.example.docscanner.data.pref.PdfQuality
 import com.example.docscanner.data.pref.ScannerPreferences
 import com.example.docscanner.data.pref.ThemeMode
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.core.content.FileProvider
+import com.example.docscanner.service.BackupRestoreService
 import com.example.docscanner.service.BiometricAuthManager
 import com.example.docscanner.ui.documents.UpdateCheckState
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsDialog(
     preferences: ScannerPreferences,
     updateCheckState: UpdateCheckState = UpdateCheckState.Idle,
+    backupRestoreService: BackupRestoreService? = null,
     onCheckForUpdates: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val settings by preferences.settings.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var showEnrollmentWarning by remember { mutableStateOf(false) }
+
+    var isBackingUp by remember { mutableStateOf(false) }
+    var isRestoring by remember { mutableStateOf(false) }
+    var restoreResultMessage by remember { mutableStateOf<String?>(null) }
+
+    val restoreFilePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null && backupRestoreService != null) {
+            isRestoring = true
+            scope.launch {
+                try {
+                    val stream = context.contentResolver.openInputStream(uri)
+                    if (stream != null) {
+                        val result = backupRestoreService.restoreBackup(stream)
+                        restoreResultMessage = result.message
+                    } else {
+                        restoreResultMessage = "Could not open selected file."
+                    }
+                } catch (e: Exception) {
+                    restoreResultMessage = "Restore failed: ${e.message}"
+                } finally {
+                    isRestoring = false
+                }
+            }
+        }
+    }
+
+    val handleCreateBackup = {
+        if (backupRestoreService != null) {
+            isBackingUp = true
+            scope.launch {
+                try {
+                    val backupZip = backupRestoreService.createBackupZip()
+                    val uri = FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.fileprovider",
+                        backupZip
+                    )
+                    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "application/zip"
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        putExtra(Intent.EXTRA_SUBJECT, backupZip.name)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(Intent.createChooser(sendIntent, "Save or Share Backup ZIP"))
+                } catch (e: Exception) {
+                    restoreResultMessage = "Backup failed: ${e.message}"
+                } finally {
+                    isBackingUp = false
+                }
+            }
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -137,7 +203,7 @@ fun SettingsDialog(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    ThemeMode.entries.forEach { mode ->
+                    for (mode in ThemeMode.entries) {
                         val isSelected = mode == settings.themeMode
                         val icon = when (mode) {
                             ThemeMode.SYSTEM -> "📱"
@@ -527,6 +593,82 @@ fun SettingsDialog(
                 }
             }
 
+            // ── 100% Offline Backup & Restore ──────────────────────────────────
+            if (backupRestoreService != null) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                    ),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Archive,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "100% Offline Backup & Restore",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "Export database & scans into a standalone ZIP or restore an existing backup",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        if (isBackingUp || isRestoring) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = if (isBackingUp) "Creating backup ZIP archive..." else "Restoring documents...",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Button(
+                                    modifier = Modifier.weight(1f),
+                                    onClick = handleCreateBackup
+                                ) {
+                                    Text("Create Backup")
+                                }
+                                FilledTonalButton(
+                                    modifier = Modifier.weight(1f),
+                                    onClick = {
+                                        restoreFilePicker.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
+                                    }
+                                ) {
+                                    Text("Restore Backup")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // ── App Updates & Maintenance ──────────────────────────────────
             Card(
                 colors = CardDefaults.cardColors(
@@ -685,6 +827,26 @@ fun SettingsDialog(
             dismissButton = {
                 TextButton(onClick = { showEnrollmentWarning = false }) {
                     Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (restoreResultMessage != null) {
+        AlertDialog(
+            onDismissRequest = { restoreResultMessage = null },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Archive,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            },
+            title = { Text("Offline Backup & Restore") },
+            text = { Text(restoreResultMessage ?: "") },
+            confirmButton = {
+                TextButton(onClick = { restoreResultMessage = null }) {
+                    Text("OK")
                 }
             }
         )

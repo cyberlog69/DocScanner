@@ -14,7 +14,9 @@ data class Document(
     val pdfPath: String = "",
     val extractedText: String = "",
     val isPinned: Boolean = false,
-    val tags: List<String> = emptyList()
+    val tags: List<String> = emptyList(),
+    val isVault: Boolean = false,
+    val folderId: String? = null
 ) {
     /** Formats tags as comma-separated string for SQLite / storage. */
     fun tagsToDbString(): String = tags.joinToString(",") { it.trim() }
@@ -43,5 +45,15 @@ data class Page(
     val createdAt: Long = 0L,
     val width: Int = 0,
     val height: Int = 0
+)
+
+/**
+ * Represents a user-created folder for organizing documents.
+ */
+data class Folder(
+    val id: String,
+    val name: String,
+    val color: Int = 0,
+    val createdAt: Long = 0L
 )
 

@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.docscanner.data.model.Document
 import com.example.docscanner.data.model.DocumentCategory
+import com.example.docscanner.data.model.Folder
 import com.example.docscanner.data.model.Page
 import com.example.docscanner.data.model.SortOrder
 import com.example.docscanner.data.model.applySort
@@ -122,6 +123,13 @@ class DocumentListViewModel(
         }
     }
 
+private data class DocumentFilter(
+    val category: DocumentCategory,
+    val query: String,
+    val folderId: String?,
+    val isVault: Boolean
+)
+
     private val _selectedCategory = MutableStateFlow(DocumentCategory.ALL)
     val selectedCategory: StateFlow<DocumentCategory> = _selectedCategory.asStateFlow()
 
@@ -137,15 +145,52 @@ class DocumentListViewModel(
     private val _selectedDocIds = MutableStateFlow<Set<String>>(emptySet())
     val selectedDocIds: StateFlow<Set<String>> = _selectedDocIds.asStateFlow()
 
+    private val _selectedFolderId = MutableStateFlow<String?>(null)
+    val selectedFolderId: StateFlow<String?> = _selectedFolderId.asStateFlow()
+
+    private val _isVaultMode = MutableStateFlow(false)
+    val isVaultMode: StateFlow<Boolean> = _isVaultMode.asStateFlow()
+
+    val folders: StateFlow<List<Folder>> = repository.getAllFolders()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val documents: StateFlow<List<Document>> = combine(
         _selectedCategory,
-        _searchQuery.debounce(300)
-    ) { category, query -> Pair(category, query) }
-        .flatMapLatest { (category, query) ->
+        _searchQuery.debounce(300),
+        _selectedFolderId,
+        _isVaultMode
+    ) { category, query, folderId, isVault ->
+        DocumentFilter(category, query, folderId, isVault)
+    }
+        .flatMapLatest { filter ->
             when {
-                query.isNotBlank() -> repository.searchDocuments(query)
-                category == DocumentCategory.ALL -> repository.getAllDocuments()
-                else -> repository.getDocumentsByCategory(category)
+                filter.isVault -> {
+                    if (filter.query.isNotBlank()) {
+                        repository.getVaultDocuments().map { list ->
+                            list.filter { doc ->
+                                doc.title.contains(filter.query, ignoreCase = true) ||
+                                doc.extractedText.contains(filter.query, ignoreCase = true)
+                            }
+                        }
+                    } else {
+                        repository.getVaultDocuments()
+                    }
+                }
+                filter.folderId != null -> {
+                    if (filter.query.isNotBlank()) {
+                        repository.getDocumentsByFolder(filter.folderId).map { list ->
+                            list.filter { doc ->
+                                doc.title.contains(filter.query, ignoreCase = true) ||
+                                doc.extractedText.contains(filter.query, ignoreCase = true)
+                            }
+                        }
+                    } else {
+                        repository.getDocumentsByFolder(filter.folderId)
+                    }
+                }
+                filter.query.isNotBlank() -> repository.searchDocuments(filter.query)
+                filter.category == DocumentCategory.ALL -> repository.getAllDocuments()
+                else -> repository.getDocumentsByCategory(filter.category)
             }
         }
         .combine(_sortOrder) { docs, sort ->
@@ -161,13 +206,53 @@ class DocumentListViewModel(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
 
-    fun setCategory(category: DocumentCategory) = _selectedCategory.update { category }
+    fun setCategory(category: DocumentCategory) {
+        _selectedCategory.update { category }
+        _selectedFolderId.value = null
+        _isVaultMode.value = false
+    }
 
     fun setSearchQuery(query: String) = _searchQuery.update { query }
 
     fun setSortOrder(order: SortOrder) = _sortOrder.update { order }
 
     fun toggleViewMode() = _isGridView.update { !it }
+
+    fun selectFolder(folderId: String?) {
+        _selectedFolderId.value = folderId
+        if (folderId != null) {
+            _isVaultMode.value = false
+        }
+    }
+
+    fun setVaultMode(enabled: Boolean) {
+        _isVaultMode.value = enabled
+        if (enabled) {
+            _selectedFolderId.value = null
+        }
+    }
+
+    fun createFolder(name: String, color: Int = 0) {
+        if (name.isBlank()) return
+        viewModelScope.launch {
+            val folder = Folder(
+                id = UUID.randomUUID().toString(),
+                name = name.trim(),
+                color = color,
+                createdAt = System.currentTimeMillis()
+            )
+            repository.insertFolder(folder)
+        }
+    }
+
+    fun deleteFolder(folderId: String) {
+        viewModelScope.launch {
+            if (_selectedFolderId.value == folderId) {
+                _selectedFolderId.value = null
+            }
+            repository.deleteFolder(folderId)
+        }
+    }
 
     // ── Document Operations ───────────────────────────────────────────────────
 

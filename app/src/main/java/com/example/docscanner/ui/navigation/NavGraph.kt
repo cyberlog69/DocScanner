@@ -27,7 +27,11 @@ import com.example.docscanner.ui.documents.DocumentListViewModel
 
 sealed class Screen(val route: String) {
     data object DocumentList : Screen("document_list")
-    data object Scanner : Screen("scanner")
+    data object Scanner : Screen("scanner?documentId={documentId}") {
+        fun createRoute(documentId: String? = null): String {
+            return if (documentId != null) "scanner?documentId=$documentId" else "scanner"
+        }
+    }
     data object DocumentDetail : Screen("document_detail/{documentId}?query={query}&rename={rename}") {
         fun createRoute(documentId: String, query: String? = null, rename: Boolean = false): String {
             val args = mutableListOf<String>()
@@ -101,7 +105,12 @@ fun DocScannerNavHost(
                         scanViewModel.onScanComplete(uris)
                     },
                     viewModel = listViewModel,
-                    preferences = appContainer.preferences
+                    preferences = appContainer.preferences,
+                    backupRestoreService = appContainer.backupRestoreService,
+                    biometricAuthManager = appContainer.biometricAuthManager,
+                    onProcessIdCard = { front, back ->
+                        scanViewModel.processIdCard(front, back)
+                    }
                 )
 
                 if (scanState.isProcessing) {
@@ -110,7 +119,17 @@ fun DocScannerNavHost(
             }
         }
 
-        composable(Screen.Scanner.route) {
+        composable(
+            route = Screen.Scanner.route,
+            arguments = listOf(
+                navArgument("documentId") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            )
+        ) { backStackEntry ->
+            val existingDocId = backStackEntry.arguments?.getString("documentId")
             val scanViewModel: ScanViewModel = viewModel(
                 factory = object : ViewModelProvider.Factory {
                     @Suppress("UNCHECKED_CAST")
@@ -129,14 +148,15 @@ fun DocScannerNavHost(
             ScannerLaunchScreen(
                 scannerService = appContainer.documentScannerService,
                 onScanComplete = { documentId ->
-                    navController.navigate(Screen.DocumentDetail.createRoute(documentId, rename = true)) {
+                    navController.navigate(Screen.DocumentDetail.createRoute(documentId, rename = existingDocId == null)) {
                         popUpTo(Screen.DocumentList.route)
                     }
                 },
                 onNavigateBack = {
                     navController.popBackStack()
                 },
-                viewModel = scanViewModel
+                viewModel = scanViewModel,
+                existingDocumentId = existingDocId
             )
         }
 
@@ -176,6 +196,9 @@ fun DocScannerNavHost(
                     navController.navigate(Screen.DocumentDetail.createRoute(newId)) {
                         popUpTo(Screen.DocumentList.route)
                     }
+                },
+                onAddPages = { docId ->
+                    navController.navigate(Screen.Scanner.createRoute(docId))
                 },
                 viewModel = detailViewModel
             )

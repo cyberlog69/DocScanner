@@ -1,4 +1,4 @@
-﻿package com.example.docscanner.repository
+package com.example.docscanner.repository
 
 import com.example.docscanner.model.Document
 import com.example.docscanner.model.DocumentCategory
@@ -30,6 +30,13 @@ interface DocumentRepository {
         pdfPath: String,
         extractedText: String
     ): ScannerResult<Unit>
+    fun getVaultDocuments(): Flow<List<Document>>
+    fun getDocumentsByFolder(folderId: String): Flow<List<Document>>
+    suspend fun setVaultStatus(id: String, isVault: Boolean): ScannerResult<Unit>
+    suspend fun setDocumentFolder(id: String, folderId: String?): ScannerResult<Unit>
+    fun getAllFolders(): Flow<List<com.example.docscanner.model.Folder>>
+    suspend fun insertFolder(folder: com.example.docscanner.model.Folder): ScannerResult<Unit>
+    suspend fun deleteFolder(folderId: String): ScannerResult<Unit>
 
     // ── Pages ─────────────────────────────────────────────────────────────
     suspend fun savePage(page: Page): ScannerResult<Unit>

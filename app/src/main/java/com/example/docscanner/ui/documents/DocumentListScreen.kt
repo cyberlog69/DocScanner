@@ -10,6 +10,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -93,11 +95,17 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
 import com.example.docscanner.model.Document
 import com.example.docscanner.model.DocumentCategory
+import com.example.docscanner.model.Folder
 import com.example.docscanner.model.SortOrder
 import com.example.docscanner.data.pref.ScannerPreferences
+import com.example.docscanner.service.BackupRestoreService
+import com.example.docscanner.service.BiometricAuthManager
 import com.example.docscanner.service.FileStorageService
 import com.example.docscanner.ui.components.DocScannerBrandLogo
 import com.example.docscanner.ui.components.UpdateAvailableDialog
@@ -115,9 +123,15 @@ fun DocumentListScreen(
     onStartScan: () -> Unit,
     onImportGallery: (List<Uri>) -> Unit = {},
     viewModel: DocumentListViewModel,
-    preferences: ScannerPreferences
+    preferences: ScannerPreferences,
+    backupRestoreService: BackupRestoreService? = null,
+    biometricAuthManager: BiometricAuthManager? = null,
+    onProcessIdCard: ((Uri, Uri) -> Unit)? = null
 ) {
     val documents by viewModel.documents.collectAsStateWithLifecycle()
+    val folders by viewModel.folders.collectAsStateWithLifecycle()
+    val selectedFolderId by viewModel.selectedFolderId.collectAsStateWithLifecycle()
+    val isVaultMode by viewModel.isVaultMode.collectAsStateWithLifecycle()
     val selectedCategory by viewModel.selectedCategory.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val isGridView by viewModel.isGridView.collectAsStateWithLifecycle()
@@ -148,6 +162,9 @@ fun DocumentListScreen(
     var showBatchExportDialog by remember { mutableStateOf(false) }
     var documentToDelete by remember { mutableStateOf<Document?>(null) }
     var documentToRename by remember { mutableStateOf<Document?>(null) }
+    var showIdCardDialog by remember { mutableStateOf(false) }
+    var showCreateFolderDialog by remember { mutableStateOf(false) }
+    var folderToDelete by remember { mutableStateOf<Folder?>(null) }
 
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -309,6 +326,14 @@ fun DocumentListScreen(
                         Icon(Icons.Default.AddPhotoAlternate, contentDescription = "Import from Gallery", modifier = Modifier.size(20.dp))
                     }
 
+                    SmallFloatingActionButton(
+                        onClick = { showIdCardDialog = true },
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                    ) {
+                        Text("🪪", style = MaterialTheme.typography.titleMedium)
+                    }
+
                     FloatingActionButton(
                         onClick = onStartScan,
                         containerColor = MaterialTheme.colorScheme.primary
@@ -402,6 +427,128 @@ fun DocumentListScreen(
                                 tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
                                 modifier = Modifier.size(16.dp)
                             )
+                        }
+                    }
+                }
+            }
+
+            // Folders & Vault Filter Bar
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+            ) {
+                // All Documents
+                item {
+                    FilterChip(
+                        selected = selectedFolderId == null && !isVaultMode,
+                        onClick = {
+                            viewModel.selectFolder(null)
+                            viewModel.setVaultMode(false)
+                        },
+                        label = { Text("📁 All") }
+                    )
+                }
+
+                // Folders list
+                items(folders, key = { it.id }) { folder ->
+                    FilterChip(
+                        selected = selectedFolderId == folder.id && !isVaultMode,
+                        onClick = { viewModel.selectFolder(folder.id) },
+                        label = { Text("📁 ${folder.name}") },
+                        trailingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Delete folder",
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .clickable { folderToDelete = folder }
+                            )
+                        }
+                    )
+                }
+
+                // New Folder Button
+                item {
+                    AssistChip(
+                        onClick = { showCreateFolderDialog = true },
+                        label = { Text("+ Folder") }
+                    )
+                }
+
+                // Encrypted Vault Chip
+                item {
+                    FilterChip(
+                        selected = isVaultMode,
+                        onClick = {
+                            if (isVaultMode) {
+                                viewModel.setVaultMode(false)
+                            } else {
+                                val activity = context as? androidx.fragment.app.FragmentActivity
+                                if (activity != null && biometricAuthManager != null) {
+                                    biometricAuthManager.authenticate(
+                                        activity = activity,
+                                        title = "Encrypted Vault",
+                                        subtitle = "Authenticate with Fingerprint, Face, or PIN to open vault"
+                                    ) { result ->
+                                        if (result.isSuccess) {
+                                            viewModel.setVaultMode(true)
+                                        } else {
+                                            scope.launch {
+                                                snackbarHostState.showSnackbar("Vault authentication failed")
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    viewModel.setVaultMode(true)
+                                }
+                            }
+                        },
+                        label = { Text(if (isVaultMode) "🔒 Vault (Unlocked)" else "🔒 Vault") }
+                    )
+                }
+            }
+
+            // Vault Active Alert Banner
+            if (isVaultMode) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "Encrypted Document Vault",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                                )
+                                Text(
+                                    text = "AES-256 GCM authenticated encryption at rest",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                                )
+                            }
+                        }
+                        TextButton(onClick = { viewModel.setVaultMode(false) }) {
+                            Text("Lock / Exit", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -542,6 +689,7 @@ fun DocumentListScreen(
         SettingsDialog(
             preferences = preferences,
             updateCheckState = updateCheckState,
+            backupRestoreService = backupRestoreService,
             onCheckForUpdates = {
                 viewModel.checkForUpdates(isManual = true)
             },
@@ -731,6 +879,190 @@ fun DocumentListScreen(
             },
             dismissButton = {
                 TextButton(onClick = { documentToRename = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    // ── Dual-Sided ID Card Dialog ─────────────────────────────────────────────
+    if (showIdCardDialog) {
+        var frontUri by remember { mutableStateOf<Uri?>(null) }
+        var backUri by remember { mutableStateOf<Uri?>(null) }
+        var isPickingFront by remember { mutableStateOf(true) }
+
+        val idCardPicker = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.PickVisualMedia()
+        ) { uri ->
+            if (uri != null) {
+                if (isPickingFront) {
+                    frontUri = uri
+                } else {
+                    backUri = uri
+                }
+            }
+        }
+
+        AlertDialog(
+            onDismissRequest = { showIdCardDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("🪪 ", style = MaterialTheme.typography.titleLarge)
+                    Text("Dual-Sided ID Card Mode", fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Text(
+                        text = "Select or snap photos of the front and back of your ID card. They will be symmetrically composited onto a single A4 page with rounded borders.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    // Front side card
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                isPickingFront = true
+                                idCardPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (frontUri != null) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text("1. FRONT SIDE", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                                Text(if (frontUri != null) "Photo selected ✓" else "Tap to choose front photo", style = MaterialTheme.typography.bodySmall)
+                            }
+                            if (frontUri != null) {
+                                Text("✓", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                            } else {
+                                Icon(Icons.Default.AddPhotoAlternate, null, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                    }
+
+                    // Back side card
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                isPickingFront = false
+                                idCardPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (backUri != null) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text("2. BACK SIDE", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                                Text(if (backUri != null) "Photo selected ✓" else "Tap to choose back photo", style = MaterialTheme.typography.bodySmall)
+                            }
+                            if (backUri != null) {
+                                Text("✓", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                            } else {
+                                Icon(Icons.Default.AddPhotoAlternate, null, modifier = Modifier.size(20.dp))
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = frontUri != null && backUri != null,
+                    onClick = {
+                        if (frontUri != null && backUri != null) {
+                            showIdCardDialog = false
+                            onProcessIdCard?.invoke(frontUri!!, backUri!!)
+                        }
+                    }
+                ) {
+                    Text("Create ID Card")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showIdCardDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // ── Create Folder Dialog ──────────────────────────────────────────────────
+    if (showCreateFolderDialog) {
+        var folderName by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { showCreateFolderDialog = false },
+            title = { Text("Create Folder") },
+            text = {
+                OutlinedTextField(
+                    value = folderName,
+                    onValueChange = { folderName = it },
+                    label = { Text("Folder Name (e.g. Invoices, Personal)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (folderName.isNotBlank()) {
+                            viewModel.createFolder(folderName.trim())
+                            showCreateFolderDialog = false
+                        }
+                    }
+                ) {
+                    Text("Create")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateFolderDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // ── Delete Folder Dialog ──────────────────────────────────────────────────
+    folderToDelete?.let { folder ->
+        AlertDialog(
+            onDismissRequest = { folderToDelete = null },
+            title = { Text("Delete Folder") },
+            text = { Text("Delete folder \"${folder.name}\"? Documents inside will be moved to Root.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteFolder(folder.id)
+                        folderToDelete = null
+                    }
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { folderToDelete = null }) {
+                    Text("Cancel")
+                }
             }
         )
     }

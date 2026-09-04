@@ -53,7 +53,8 @@ fun ScannerLaunchScreen(
     scannerService: DocumentScannerService,
     onScanComplete: (String) -> Unit,
     onNavigateBack: () -> Unit,
-    viewModel: ScanViewModel
+    viewModel: ScanViewModel,
+    existingDocumentId: String? = null
 ) {
     val context = LocalContext.current
     val activity = context as Activity
@@ -72,7 +73,7 @@ fun ScannerLaunchScreen(
             val scanResult = GmsDocumentScanningResult.fromActivityResultIntent(result.data)
             val pageUris = scanResult?.pages?.map { it.imageUri } ?: emptyList()
             if (pageUris.isNotEmpty()) {
-                viewModel.onScanComplete(pageUris)
+                viewModel.onScanComplete(pageUris, existingDocumentId)
             } else {
                 onNavigateBack()
             }

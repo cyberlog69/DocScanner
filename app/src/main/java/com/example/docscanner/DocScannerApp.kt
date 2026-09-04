@@ -29,6 +29,7 @@ class AppContainer(val context: Context) {
     val appUpdateService: com.example.docscanner.service.AppUpdateService by lazy { com.example.docscanner.service.AppUpdateService(context) }
     val biometricAuthManager: com.example.docscanner.service.BiometricAuthManager by lazy { com.example.docscanner.service.BiometricAuthManager(context) }
     val appSecurityManager: com.example.docscanner.service.AppSecurityManager by lazy { com.example.docscanner.service.AppSecurityManager(context, preferences, biometricAuthManager) }
+    val backupRestoreService: com.example.docscanner.service.BackupRestoreService by lazy { com.example.docscanner.service.BackupRestoreService(context, repository, fileStorageService) }
 }
 
 class DocScannerApp : Application() {

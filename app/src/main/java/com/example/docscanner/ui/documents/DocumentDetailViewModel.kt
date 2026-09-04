@@ -3,16 +3,24 @@ package com.example.docscanner.ui.documents
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import android.graphics.BitmapFactory
+import android.net.Uri
 import com.example.docscanner.data.model.Document
 import com.example.docscanner.data.model.DocumentCategory
+import com.example.docscanner.data.model.Folder
 import com.example.docscanner.data.model.Page
 import com.example.docscanner.data.pref.PdfQuality
 import com.example.docscanner.data.pref.ScannerPreferences
 import com.example.docscanner.data.repository.DocumentRepository
+import com.example.docscanner.service.ExtractedReceiptData
 import com.example.docscanner.service.FileStorageService
 import com.example.docscanner.service.OcrService
 import com.example.docscanner.service.PageData
+import com.example.docscanner.service.PdfAnnotationService
 import com.example.docscanner.service.PdfGenerator
+import com.example.docscanner.service.ReceiptParser
+import com.example.docscanner.service.StampConfig
+import com.example.docscanner.service.VaultEncryptionService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -39,6 +47,10 @@ class DocumentDetailViewModel(
         loadDocument()
     }
 
+    fun reload() {
+        loadDocument()
+    }
+
     private fun loadDocument() {
         viewModelScope.launch {
             val doc = repository.getDocumentById(documentId)
@@ -46,7 +58,20 @@ class DocumentDetailViewModel(
             val bytes = withContext(Dispatchers.IO) {
                 fileStorageService.getDocumentStorageBytes(documentId)
             }
-            _state.update { it.copy(document = doc, pages = pages, storageBytes = bytes) }
+            val folders = repository.getAllFoldersSync()
+            val parsedReceipt = if (doc != null && doc.extractedText.isNotBlank()) {
+                ReceiptParser.parse(doc.extractedText)
+            } else null
+
+            _state.update {
+                it.copy(
+                    document = doc,
+                    pages = pages,
+                    storageBytes = bytes,
+                    availableFolders = folders,
+                    extractedReceiptData = parsedReceipt
+                )
+            }
         }
     }
 
@@ -380,6 +405,169 @@ class DocumentDetailViewModel(
         }
     }
 
+    /**
+     * Appends pages directly into this document from selected image URIs (e.g. Gallery picker).
+     */
+    fun appendPages(uris: List<Uri>, context: android.content.Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _state.update { it.copy(isOcrRunning = true, ocrProgressText = "Adding ${uris.size} pages...") }
+            try {
+                val doc = repository.getDocumentById(documentId) ?: return@launch
+                val existingPages = repository.getPagesForDocumentSync(documentId)
+                val startIdx = existingPages.size
+
+                val bitmaps = uris.mapNotNull { uri ->
+                    try {
+                        if (uri.scheme == "content") {
+                            context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
+                        } else {
+                            uri.path?.let { BitmapFactory.decodeFile(it) }
+                        }
+                    } catch (_: Exception) { null }
+                }
+                if (bitmaps.isEmpty()) return@launch
+
+                val settings = preferences.settings.value
+                val imageQuality = when (settings.cameraQuality) {
+                    com.example.docscanner.data.pref.CameraQuality.UHD_4K -> 100
+                    com.example.docscanner.data.pref.CameraQuality.HIGH -> 92
+                    com.example.docscanner.data.pref.CameraQuality.STANDARD -> 80
+                }
+
+                val newImagePaths = bitmaps.mapIndexed { index, bitmap ->
+                    fileStorageService.savePageImage(bitmap, documentId, startIdx + index, quality = imageQuality)
+                }
+
+                val newOcrResults = if (settings.autoOcr) {
+                    _state.update { it.copy(ocrProgressText = "Running OCR on ${bitmaps.size} new pages...") }
+                    bitmaps.map { ocrService.recognizeText(it, settings.ocrLanguage) }
+                } else {
+                    emptyList()
+                }
+
+                val newPages = newImagePaths.mapIndexed { index, path ->
+                    Page(
+                        id = UUID.randomUUID().toString(),
+                        documentId = documentId,
+                        pageIndex = startIdx + index,
+                        imagePath = path,
+                        originalImagePath = path,
+                        extractedText = newOcrResults.getOrNull(index)?.fullText ?: "",
+                        createdAt = System.currentTimeMillis()
+                    )
+                }
+                repository.savePages(newPages)
+
+                // Re-generate searchable PDF for all pages
+                val allPages = repository.getPagesForDocumentSync(documentId)
+                val allPageData = allPages.mapNotNull { page ->
+                    fileStorageService.loadBitmap(page.imagePath)?.let { PageData(it, page.extractedText) }
+                }
+                val pdfBytes = pdfGenerator.generatePdf(allPageData, doc.title, settings.pdfQuality)
+                val pdfPath = fileStorageService.savePdf(pdfBytes, documentId)
+                allPageData.forEach { it.bitmap.recycle() }
+
+                val combinedText = allPages.joinToString("\n\n--- Page Break ---\n\n") { it.extractedText }
+                repository.updateDocumentMeta(
+                    id = documentId,
+                    pageCount = allPages.size,
+                    thumbnailPath = doc.thumbnailPath,
+                    pdfPath = pdfPath,
+                    extractedText = combinedText
+                )
+
+                bitmaps.forEach { it.recycle() }
+                loadDocument()
+            } catch (e: Exception) {
+                _state.update { it.copy(ocrError = e.message ?: "Failed to add pages") }
+            } finally {
+                _state.update { it.copy(isOcrRunning = false, ocrProgressText = "") }
+            }
+        }
+    }
+
+    /**
+     * Toggles AES-256 GCM vault encryption on this document.
+     */
+    fun toggleVault(onComplete: (Boolean) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val doc = _state.value.document ?: return@launch
+            val newVaultStatus = !doc.isVault
+            val pages = _state.value.pages
+
+            try {
+                if (newVaultStatus) {
+                    // Encrypt page images and PDF
+                    for (page in pages) {
+                        File(page.imagePath).takeIf { it.exists() }?.let { VaultEncryptionService.encryptFile(it) }
+                        if (page.originalImagePath.isNotBlank() && page.originalImagePath != page.imagePath) {
+                            File(page.originalImagePath).takeIf { it.exists() }?.let { VaultEncryptionService.encryptFile(it) }
+                        }
+                    }
+                    if (doc.pdfPath.isNotBlank()) {
+                        File(doc.pdfPath).takeIf { it.exists() }?.let { VaultEncryptionService.encryptFile(it) }
+                    }
+                    if (doc.thumbnailPath.isNotBlank()) {
+                        File(doc.thumbnailPath).takeIf { it.exists() }?.let { VaultEncryptionService.encryptFile(it) }
+                    }
+                } else {
+                    // Decrypt page images and PDF back to plaintext
+                    for (page in pages) {
+                        File(page.imagePath).takeIf { it.exists() }?.let { VaultEncryptionService.decryptFileInPlace(it) }
+                        if (page.originalImagePath.isNotBlank() && page.originalImagePath != page.imagePath) {
+                            File(page.originalImagePath).takeIf { it.exists() }?.let { VaultEncryptionService.decryptFileInPlace(it) }
+                        }
+                    }
+                    if (doc.pdfPath.isNotBlank()) {
+                        File(doc.pdfPath).takeIf { it.exists() }?.let { VaultEncryptionService.decryptFileInPlace(it) }
+                    }
+                    if (doc.thumbnailPath.isNotBlank()) {
+                        File(doc.thumbnailPath).takeIf { it.exists() }?.let { VaultEncryptionService.decryptFileInPlace(it) }
+                    }
+                }
+
+                repository.setVaultStatus(documentId, newVaultStatus)
+                loadDocument()
+                withContext(Dispatchers.Main) {
+                    onComplete(newVaultStatus)
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(exportError = "Vault toggle failed: ${e.message}") }
+            }
+        }
+    }
+
+    /**
+     * Moves document to the specified folder (or null for root).
+     */
+    fun moveToFolder(folderId: String?) {
+        viewModelScope.launch {
+            repository.setDocumentFolder(documentId, folderId)
+            loadDocument()
+        }
+    }
+
+    /**
+     * Stamps an annotation / watermark onto the document's PDF.
+     */
+    fun stampPdf(config: StampConfig, onComplete: (Boolean) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val doc = _state.value.document ?: return@launch
+            if (doc.pdfPath.isBlank()) return@launch
+
+            val pdfFile = File(doc.pdfPath)
+            if (!pdfFile.exists()) return@launch
+
+            val success = PdfAnnotationService.stampPdfFile(pdfFile, config)
+            if (success) {
+                loadDocument()
+            }
+            withContext(Dispatchers.Main) {
+                onComplete(success)
+            }
+        }
+    }
+
     companion object {
         fun provideFactory(
             repository: DocumentRepository,
@@ -414,5 +602,7 @@ data class DocumentDetailState(
     val isOcrRunning: Boolean = false,
     val ocrProgressText: String = "",
     val ocrError: String? = null,
-    val storageBytes: Long = 0L
+    val storageBytes: Long = 0L,
+    val availableFolders: List<Folder> = emptyList(),
+    val extractedReceiptData: ExtractedReceiptData? = null
 )

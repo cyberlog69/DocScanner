@@ -31,24 +31,36 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ZoomIn
+import com.example.docscanner.service.PdfAnnotationService
+import com.example.docscanner.service.StampConfig
+import com.example.docscanner.service.StampPosition
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Badge
@@ -131,7 +143,8 @@ fun DocumentDetailScreen(
     viewModel: DocumentDetailViewModel,
     searchQuery: String = "",
     autoRename: Boolean = false,
-    onOpenDocument: (String) -> Unit = {}
+    onOpenDocument: (String) -> Unit = {},
+    onAddPages: ((String) -> Unit)? = null
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -145,9 +158,19 @@ fun DocumentDetailScreen(
     var showPdfQualityDialog by remember { mutableStateOf(false) }
     var showAddTagDialog by remember { mutableStateOf(false) }
     var showSplitDialog by remember { mutableStateOf(false) }
+    var showStampDialog by remember { mutableStateOf(false) }
+    var showMoveToFolderDialog by remember { mutableStateOf(false) }
     var zoomPagePath by remember { mutableStateOf<String?>(null) }
     var selectedPdfQuality by remember { mutableStateOf(PdfQuality.UHD_4K) }
     var selectedPageIndex by remember { mutableIntStateOf(0) }
+
+    val galleryPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            viewModel.appendPages(uris, context)
+        }
+    }
 
     var isCopiedPage by remember { mutableStateOf(false) }
     var isCopiedAll by remember { mutableStateOf(false) }
@@ -190,6 +213,10 @@ fun DocumentDetailScreen(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false)
                         )
+                        if (doc?.isVault == true) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("🔒", style = MaterialTheme.typography.titleSmall)
+                        }
                         if (doc?.isPinned == true) {
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("📌", style = MaterialTheme.typography.titleSmall)
@@ -226,6 +253,50 @@ fun DocumentDetailScreen(
                                 showMenu = false
                                 HapticHelper.confirm(haptic)
                                 viewModel.togglePin()
+                            }
+                        )
+                        if (onAddPages != null && doc != null) {
+                            DropdownMenuItem(
+                                text = { Text("Scan More Pages (Camera)") },
+                                leadingIcon = { Icon(Icons.Default.CameraAlt, null) },
+                                onClick = {
+                                    showMenu = false
+                                    onAddPages(doc.id)
+                                }
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text("Add Pages from Gallery") },
+                            leadingIcon = { Icon(Icons.Default.AddPhotoAlternate, null) },
+                            onClick = {
+                                showMenu = false
+                                galleryPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Watermark / Stamp PDF") },
+                            leadingIcon = { Icon(Icons.Default.Edit, null) },
+                            onClick = {
+                                showMenu = false
+                                showStampDialog = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(if (doc?.isVault == true) "Unlock from Vault" else "Move to Vault 🔒") },
+                            leadingIcon = { Icon(if (doc?.isVault == true) Icons.Default.LockOpen else Icons.Default.Lock, null) },
+                            onClick = {
+                                showMenu = false
+                                viewModel.toggleVault { inVault ->
+                                    Toast.makeText(context, if (inVault) "Encrypted & moved to Vault 🔒" else "Restored from Vault 🔓", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Move to Folder 📁") },
+                            leadingIcon = { Icon(Icons.Default.Folder, null) },
+                            onClick = {
+                                showMenu = false
+                                showMoveToFolderDialog = true
                             }
                         )
                         DropdownMenuItem(
@@ -501,6 +572,87 @@ fun DocumentDetailScreen(
                             Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(if (pages.size <= 1) "Delete Doc" else "Delete Page")
+                        }
+                    }
+
+                    // Add Pages Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (onAddPages != null && doc != null) {
+                            FilledTonalButton(
+                                modifier = Modifier.weight(1f),
+                                onClick = {
+                                    HapticHelper.click(haptic)
+                                    onAddPages(doc.id)
+                                }
+                            ) {
+                                Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Scan Page")
+                            }
+                        }
+                        FilledTonalButton(
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                HapticHelper.click(haptic)
+                                galleryPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                            }
+                        ) {
+                            Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Add Gallery")
+                        }
+                    }
+                }
+
+                // Extracted Receipt / Financial Data Card (if available)
+                val receipt = state.extractedReceiptData
+                if (receipt != null && receipt.hasData) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.35f)
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ReceiptLong,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.tertiary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = "Extracted Receipt & Financial Details",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            receipt.merchantName?.let {
+                                ReceiptFieldRow("Merchant / Vendor", it, context, haptic)
+                            }
+                            receipt.date?.let {
+                                ReceiptFieldRow("Transaction Date", it, context, haptic)
+                            }
+                            receipt.totalAmount?.let {
+                                ReceiptFieldRow("Total Amount", it, context, haptic)
+                            }
+                            receipt.taxAmount?.let {
+                                ReceiptFieldRow("Tax / GST", it, context, haptic)
+                            }
+                            receipt.invoiceNumber?.let {
+                                ReceiptFieldRow("Invoice / Bill #", it, context, haptic)
+                            }
                         }
                     }
                 }
@@ -1152,6 +1304,243 @@ fun DocumentDetailScreen(
             pageCount = pages.size,
             onDismiss = { zoomPagePath = null }
         )
+    }
+
+    // ── Stamp / Watermark Dialog ──────────────────────────────────────────────
+    if (showStampDialog) {
+        var stampText by remember { mutableStateOf("APPROVED") }
+        var selectedPosition by remember { mutableStateOf(StampPosition.CENTER_WATERMARK) }
+        var selectedColorHex by remember { mutableStateOf("#D32F2F") }
+        val colors = listOf(
+            Pair("Red", "#D32F2F"),
+            Pair("Green", "#388E3C"),
+            Pair("Blue", "#1976D2"),
+            Pair("Orange", "#F57C00"),
+            Pair("Gray", "#616161")
+        )
+
+        AlertDialog(
+            onDismissRequest = { showStampDialog = false },
+            title = { Text("Watermark / Stamp PDF") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text("Preset Stamps", style = MaterialTheme.typography.labelMedium)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        PdfAnnotationService.PRESET_STAMPS.forEach { preset ->
+                            FilterChip(
+                                selected = stampText == preset,
+                                onClick = { stampText = preset },
+                                label = { Text(preset, style = MaterialTheme.typography.labelSmall) }
+                            )
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = stampText,
+                        onValueChange = { stampText = it },
+                        label = { Text("Stamp Text") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Text("Position", style = MaterialTheme.typography.labelMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        StampPosition.entries.forEach { pos ->
+                            FilterChip(
+                                selected = selectedPosition == pos,
+                                onClick = { selectedPosition = pos },
+                                label = { Text(pos.displayName, style = MaterialTheme.typography.labelSmall) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+
+                    Text("Color", style = MaterialTheme.typography.labelMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        colors.forEach { (name, hex) ->
+                            val isChosen = selectedColorHex == hex
+                            Card(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { selectedColorHex = hex },
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isChosen) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                                ),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(
+                                    text = name,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 8.dp),
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = if (isChosen) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (stampText.isNotBlank()) {
+                            showStampDialog = false
+                            val config = StampConfig(
+                                text = stampText.trim(),
+                                colorHex = selectedColorHex,
+                                position = selectedPosition
+                            )
+                            viewModel.stampPdf(config) { success ->
+                                Toast.makeText(
+                                    context,
+                                    if (success) "PDF stamped successfully!" else "Failed to stamp PDF",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    }
+                ) {
+                    Text("Apply Stamp")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showStampDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // ── Move to Folder Dialog ─────────────────────────────────────────────────
+    if (showMoveToFolderDialog) {
+        val folders = state.availableFolders
+        AlertDialog(
+            onDismissRequest = { showMoveToFolderDialog = false },
+            title = { Text("Move to Folder") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                viewModel.moveToFolder(null)
+                                showMoveToFolderDialog = false
+                                Toast.makeText(context, "Moved to Root", Toast.LENGTH_SHORT).show()
+                            },
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (doc?.folderId == null) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("📄", style = MaterialTheme.typography.titleMedium)
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text("Root / No Folder", fontWeight = if (doc?.folderId == null) FontWeight.Bold else FontWeight.Normal)
+                        }
+                    }
+
+                    folders.forEach { folder ->
+                        val isSelected = doc?.folderId == folder.id
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    viewModel.moveToFolder(folder.id)
+                                    showMoveToFolderDialog = false
+                                    Toast.makeText(context, "Moved to ${folder.name}", Toast.LENGTH_SHORT).show()
+                                },
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("📁", style = MaterialTheme.typography.titleMedium)
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(folder.name, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showMoveToFolderDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun ReceiptFieldRow(
+    label: String,
+    value: String,
+    context: android.content.Context,
+    haptic: androidx.compose.ui.hapticfeedback.HapticFeedback
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+        IconButton(
+            modifier = Modifier.size(28.dp),
+            onClick = {
+                HapticHelper.click(haptic)
+                val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText(label, value))
+                Toast.makeText(context, "$label copied", Toast.LENGTH_SHORT).show()
+            }
+        ) {
+            Icon(Icons.Default.ContentCopy, contentDescription = "Copy $label", modifier = Modifier.size(16.dp))
+        }
     }
 }
 

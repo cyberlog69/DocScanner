@@ -8,11 +8,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.docscanner.data.model.CategoryClassifier
 import com.example.docscanner.data.model.Document
+import com.example.docscanner.data.model.DocumentCategory
 import com.example.docscanner.data.model.Page
 import com.example.docscanner.data.pref.CameraQuality
 import com.example.docscanner.data.pref.ScannerPreferences
 import com.example.docscanner.data.repository.DocumentRepository
 import com.example.docscanner.service.FileStorageService
+import com.example.docscanner.service.IdCardCompositorService
 import com.example.docscanner.service.OcrService
 import com.example.docscanner.service.PageData
 import com.example.docscanner.service.PdfGenerator
@@ -22,6 +24,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 
 class ScanViewModel(
@@ -181,6 +186,88 @@ class ScanViewModel(
                 _state.update {
                     it.copy(isProcessing = false, error = e.message ?: "Scan failed")
                 }
+            }
+        }
+    }
+
+    /**
+     * Composites dual-sided ID card images (front & back) symmetrically onto an A4 page
+     * and saves as an ID Card document.
+     */
+    fun processIdCard(frontUri: Uri, backUri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val settings = preferences.settings.value
+            val imageQuality = when (settings.cameraQuality) {
+                CameraQuality.UHD_4K -> 100
+                CameraQuality.HIGH -> 92
+                CameraQuality.STANDARD -> 80
+            }
+
+            _state.update { it.copy(isProcessing = true, processingStep = "Compositing ID Card (Front + Back)...") }
+
+            try {
+                val frontBitmap = decodeBitmapFromUri(frontUri)
+                val backBitmap = decodeBitmapFromUri(backUri)
+                if (frontBitmap == null || backBitmap == null) {
+                    _state.update { it.copy(isProcessing = false, error = "Failed to load ID card images") }
+                    return@launch
+                }
+
+                val compositeBitmap = IdCardCompositorService.compositeIdCard(frontBitmap, backBitmap)
+                frontBitmap.recycle()
+                backBitmap.recycle()
+
+                val documentId = UUID.randomUUID().toString()
+                val thumbnailPath = fileStorageService.saveThumbnail(compositeBitmap, documentId)
+                val pagePath = fileStorageService.savePageImage(compositeBitmap, documentId, 0, quality = imageQuality)
+
+                val ocrResult = if (settings.autoOcr) {
+                    _state.update { it.copy(processingStep = "Running AI OCR on ID card...") }
+                    ocrService.recognizeText(compositeBitmap, settings.ocrLanguage)
+                } else null
+
+                val extractedText = ocrResult?.fullText ?: ""
+
+                _state.update { it.copy(processingStep = "Generating PDF...") }
+                val pageData = listOf(PageData(compositeBitmap, extractedText))
+                val pdfBytes = pdfGenerator.generatePdf(pageData, "ID Card", settings.pdfQuality)
+                val pdfPath = fileStorageService.savePdf(pdfBytes, documentId)
+
+                val doc = Document(
+                    id = documentId,
+                    title = "ID Card ${SimpleDateFormat("MMM d, yyyy", Locale.getDefault()).format(Date())}",
+                    category = DocumentCategory.ID_CARD,
+                    createdAt = System.currentTimeMillis(),
+                    modifiedAt = System.currentTimeMillis(),
+                    pageCount = 1,
+                    thumbnailPath = thumbnailPath,
+                    pdfPath = pdfPath,
+                    extractedText = extractedText
+                )
+                repository.saveDocument(doc)
+
+                val page = Page(
+                    id = UUID.randomUUID().toString(),
+                    documentId = documentId,
+                    pageIndex = 0,
+                    imagePath = pagePath,
+                    originalImagePath = pagePath,
+                    extractedText = extractedText,
+                    createdAt = System.currentTimeMillis()
+                )
+                repository.savePages(listOf(page))
+
+                compositeBitmap.recycle()
+
+                _state.update {
+                    it.copy(
+                        isProcessing = false,
+                        savedDocumentId = documentId,
+                        ocrPreviewText = extractedText
+                    )
+                }
+            } catch (e: Exception) {
+                _state.update { it.copy(isProcessing = false, error = e.message ?: "ID Card processing failed") }
             }
         }
     }

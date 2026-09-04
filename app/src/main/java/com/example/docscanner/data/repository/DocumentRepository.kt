@@ -71,6 +71,34 @@ class DocumentRepository(
         documentDao.updateDocumentMeta(id, pageCount, thumbnailPath, pdfPath, extractedText)
     }
 
+    override fun getVaultDocuments(): Flow<List<Document>> = documentDao.getVaultDocuments()
+
+    override fun getDocumentsByFolder(folderId: String): Flow<List<Document>> =
+        documentDao.getDocumentsByFolder(folderId)
+
+    override suspend fun setVaultStatus(id: String, isVault: Boolean): ScannerResult<Unit> = safeDbCall {
+        documentDao.setVaultStatus(id, isVault)
+    }
+
+    override suspend fun setDocumentFolder(id: String, folderId: String?): ScannerResult<Unit> = safeDbCall {
+        documentDao.setDocumentFolder(id, folderId)
+    }
+
+    override fun getAllFolders(): Flow<List<com.example.docscanner.model.Folder>> = documentDao.getAllFolders()
+
+    override suspend fun insertFolder(folder: com.example.docscanner.model.Folder): ScannerResult<Unit> = safeDbCall {
+        documentDao.insertFolder(folder)
+    }
+
+    override suspend fun deleteFolder(folderId: String): ScannerResult<Unit> = safeDbCall {
+        documentDao.deleteFolder(folderId)
+    }
+
+    suspend fun getAllFoldersSync(): List<com.example.docscanner.model.Folder> = documentDao.getAllFoldersSync()
+    suspend fun updateFolder(folder: com.example.docscanner.model.Folder): ScannerResult<Unit> = safeDbCall {
+        documentDao.updateFolder(folder)
+    }
+
     // ── Pages ─────────────────────────────────────────────────────────────
 
     override suspend fun savePage(page: Page): ScannerResult<Unit> = safeDbCall {

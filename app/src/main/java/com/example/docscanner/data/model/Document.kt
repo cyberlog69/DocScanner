@@ -6,4 +6,5 @@ package com.example.docscanner.data.model
  */
 typealias Document = com.example.docscanner.model.Document
 typealias DocumentCategory = com.example.docscanner.model.DocumentCategory
+typealias Folder = com.example.docscanner.model.Folder
 
