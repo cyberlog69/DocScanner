@@ -15,6 +15,15 @@ android {
         versionName = "1.7.0"
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("docscanner-signing.keystore")
+            storePassword = "docscanner123"
+            keyAlias = "docscanner"
+            keyPassword = "docscanner123"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -23,6 +32,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("release")
+        }
+        debug {
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {
