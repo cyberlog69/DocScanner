@@ -5,7 +5,7 @@
 [![Kotlin Multiplatform](https://img.shields.io/badge/Kotlin-Multiplatform%202.3-7F52FF.svg)](https://www.jetbrains.com/kotlin-multiplatform/)
 [![Jetpack Compose](https://img.shields.io/badge/UI-Compose%20%26%20M3-4285F4.svg)](https://developer.android.com/jetpack/compose)
 [![Koin DI](https://img.shields.io/badge/DI-Koin%204.0-EB5424.svg)](https://insert-koin.io/)
-[![Privacy](https://img.shields.io/badge/Privacy-100%25%20Offline%20AI-brightgreen.svg)](#-privacy-guarantee)
+[![Privacy](https://img.shields.io/badge/Privacy-100%25%20Offline%20AI-brightgreen.svg)](PRIVACY_POLICY.md)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 **DocScanner** is a fast, modern, privacy-focused mobile application that transforms your device into an offline AI document scanning workstation. Built with **Kotlin Multiplatform (KMP)** and **Jetpack Compose / SwiftUI**, it provides **Android & iOS** support with 100% on-device AI OCR, automatic edge detection, smart auto-categorization, paper size diagnostics, Wi-Fi printing, and searchable PDF creation.

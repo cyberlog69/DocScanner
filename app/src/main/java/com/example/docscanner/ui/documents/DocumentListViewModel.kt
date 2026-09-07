@@ -67,7 +67,7 @@ class DocumentListViewModel(
     val isBannerDismissed: StateFlow<Boolean> = _isBannerDismissed.asStateFlow()
 
     init {
-        if (preferences.settings.value.autoCheckUpdates) {
+        if (BuildConfig.ENABLE_GITHUB_UPDATER && preferences.settings.value.autoCheckUpdates) {
             checkForUpdates(BuildConfig.VERSION_NAME, isManual = false)
         }
     }
@@ -82,6 +82,7 @@ class DocumentListViewModel(
     }
 
     fun checkForUpdates(currentVersion: String = BuildConfig.VERSION_NAME, isManual: Boolean = false) {
+        if (!BuildConfig.ENABLE_GITHUB_UPDATER) return
         viewModelScope.launch {
             _updateCheckState.value = UpdateCheckState.Checking
             when (val result = appUpdateService.checkForUpdates(currentVersion)) {
@@ -105,6 +106,7 @@ class DocumentListViewModel(
     }
 
     fun downloadAndInstall(appUpdateInfo: AppUpdateInfo, context: Context) {
+        if (!BuildConfig.ENABLE_GITHUB_UPDATER) return
         val downloadUrl = appUpdateInfo.downloadUrl ?: return
         viewModelScope.launch {
             _downloadProgress.value = 0f

@@ -15,6 +15,20 @@ android {
         versionName = "1.7.0"
     }
 
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("play") {
+            dimension = "distribution"
+            applicationId = "com.cyberlog.docscanner"
+            buildConfigField("Boolean", "ENABLE_GITHUB_UPDATER", "false")
+        }
+        create("github") {
+            dimension = "distribution"
+            applicationId = "com.cyberlog.docscanner.sideload"
+            buildConfigField("Boolean", "ENABLE_GITHUB_UPDATER", "true")
+        }
+    }
+
     signingConfigs {
         create("release") {
             storeFile = file("docscanner-signing.keystore")
