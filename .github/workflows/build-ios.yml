@@ -70,8 +70,8 @@ jobs:
           plutil -replace CFBundleDisplayName -string "DocScanner" build/ios/Payload/DocScanner.app/Info.plist
           plutil -replace CFBundlePackageType -string "APPL" build/ios/Payload/DocScanner.app/Info.plist
           plutil -replace CFBundleDevelopmentRegion -string "en" build/ios/Payload/DocScanner.app/Info.plist
-          plutil -replace CFBundleShortVersionString -string "1.6.0" build/ios/Payload/DocScanner.app/Info.plist
-          plutil -replace CFBundleVersion -string "6" build/ios/Payload/DocScanner.app/Info.plist
+          plutil -replace CFBundleShortVersionString -string "1.7.0" build/ios/Payload/DocScanner.app/Info.plist
+          plutil -replace CFBundleVersion -string "7" build/ios/Payload/DocScanner.app/Info.plist
           plutil -replace MinimumOSVersion -string "16.0" build/ios/Payload/DocScanner.app/Info.plist
           
           # Compile Swift sources and statically link DocScannerKit into single executable Mach-O binary

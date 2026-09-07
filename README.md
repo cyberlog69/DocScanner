@@ -27,6 +27,15 @@
 - 🔖 **Tags & Custom Labels**: Organize scans with custom searchable `#tags` and filter chips.
 - ⚡ **Instant Full-Text Search (FTS4)**: SQLite-powered tokenized full-text search indexing across document titles, extracted OCR body text, and custom tags.
 
+### 🪪 Advanced Scanning & Document Management (v1.7.0)
+- 🪪 **Dual-Sided ID Card Mode**: Sequential front & back capture auto-composited symmetrically onto a standard A4 canvas (300 DPI, ID-1 ratio) with rounded frames, drop shadow, and header labels.
+- 🗄️ **100% Offline Backup & Restore (.zip)**: Export entire database records, page bitmaps, thumbnails, and PDFs into a portable ZIP archive. Restore on any device without internet.
+- 🔒 **Encrypted Document Vault**: Hardware-backed Android Keystore AES-256 GCM authenticated encryption at rest for sensitive documents, isolated from main list and FTS4 search with biometric unlock.
+- 🧾 **Smart Financial Data Extraction**: Pure local regex & heuristic parsing on OCR text extracting Merchant, Date, Total Amount, Tax/GST, and Invoice # with 1-tap copy actions.
+- 📝 **PDF Watermark Stamps & Annotations**: Stamp documents with customizable watermarks (APPROVED, CONFIDENTIAL, PAID, COPY, etc.) or custom banners with custom opacity via iText 7.
+- 🔄 **Add Pages to Existing Document**: Re-scan or import additional pages directly into any saved document, re-indexing pages and rebuilding the searchable PDF.
+- 📂 **Hierarchical Folder Organization**: Create custom color-coded folders, organize documents, and filter with scrollable chips and document counts.
+
 ### 🖨️ Sharing, Exporting & Workflow
 - 🖨️ **Local Wi-Fi & Virtual PDF Printing**: Stream generated high-resolution PDF pages directly to network printers over Wi-Fi (HP, Canon, Epson, Brother) or print to PDF.
 - 📦 **Batch Operations & ZIP Export**: Long-press to enter multi-select mode. Batch merge, batch categorize, batch delete, or export multiple PDFs into a single ZIP archive.

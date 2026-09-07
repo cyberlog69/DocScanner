@@ -25,7 +25,7 @@ struct SettingsView: View {
                 HStack {
                     Text("Version")
                     Spacer()
-                    Text("1.6.0-beta").foregroundColor(.secondary)
+                    Text("1.7.0").foregroundColor(.secondary)
                 }
                 HStack {
                     Text("Privacy")

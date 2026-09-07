@@ -1,0 +1,8 @@
+﻿- Dual-Sided ID Card Mode: Symmetrical A4 compositing for front and back ID cards with rounded frames
+- 100% Offline Backup & Restore: Complete portable .ZIP export and restore of database records & media
+- Encrypted Document Vault: Hardware-backed Android Keystore AES-256 GCM authenticated encryption with biometric lock
+- Smart Receipt & Invoice Field Extraction: On-device regex & heuristic extraction of Merchant, Date, Total, Tax/GST, and Invoice #
+- PDF Annotations & Watermark Stamps: Customizable stamps (APPROVED, CONFIDENTIAL, PAID, etc.) applied via iText 7
+- Add Pages to Existing Document: Re-scan or import additional pages directly into any saved document
+- Hierarchical Folder Organization: Custom folder creation, assignment, and filtering
+- 100% Offline, Zero Network Requests, Zero Telemetry
