@@ -5,6 +5,9 @@
 -keep class org.bouncycastle.** { *; }
 -dontwarn org.bouncycastle.**
 
+# ── SLF4J (used by iText 7) ───────────────────────────────────────────────────
+-dontwarn org.slf4j.**
+
 # ── ML Kit ───────────────────────────────────────────────────────────────────
 -keep class com.google.mlkit.** { *; }
 -dontwarn com.google.mlkit.**
