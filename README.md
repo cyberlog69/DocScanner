@@ -10,6 +10,12 @@
 
 **DocScanner** is a fast, modern, privacy-focused mobile application that transforms your device into an offline AI document scanning workstation. Built with **Kotlin Multiplatform (KMP)** and **Jetpack Compose / SwiftUI**, it provides **Android & iOS** support with 100% on-device AI OCR, automatic edge detection, smart auto-categorization, paper size diagnostics, Wi-Fi printing, and searchable PDF creation.
 
+<p align="center">
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1_id_card_mode.png" width="32%" alt="Dual-Sided ID Card Mode" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2_privacy_offline.png" width="32%" alt="100% Offline Privacy" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3_clarity_control.png" width="32%" alt="Scan Clarity & Control" />
+</p>
+
 ---
 
 ## ✨ Features
