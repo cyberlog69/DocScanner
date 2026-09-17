@@ -3,6 +3,7 @@ package com.example.docscanner.service
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Rect
 import com.example.docscanner.data.pref.OcrLanguage
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
@@ -52,10 +53,12 @@ class OcrService(
                     val blocks = visionText.textBlocks.map { block ->
                         OcrBlock(
                             text = block.text,
+                            boundingBox = block.boundingBox,
                             lines = block.lines.map { line ->
                                 OcrLine(
                                     text = line.text,
-                                    confidence = line.confidence
+                                    confidence = line.confidence,
+                                    boundingBox = line.boundingBox
                                 )
                             }
                         )
@@ -89,10 +92,12 @@ data class OcrResult(
 
 data class OcrBlock(
     val text: String,
+    val boundingBox: Rect? = null,
     val lines: List<OcrLine> = emptyList()
 )
 
 data class OcrLine(
     val text: String,
-    val confidence: Float
+    val confidence: Float,
+    val boundingBox: Rect? = null
 )

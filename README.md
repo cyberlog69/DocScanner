@@ -42,6 +42,12 @@
 - 🔄 **Add Pages to Existing Document**: Re-scan or import additional pages directly into any saved document, re-indexing pages and rebuilding the searchable PDF.
 - 📂 **Hierarchical Folder Organization**: Create custom color-coded folders, organize documents, and filter with scrollable chips and document counts.
 
+### ⚡ Power Features (100% Offline)
+- 🖊️ **Electronic Signature Pad**: Draw smooth signatures with fine/medium/bold Bezier curves, select ink colors (Signature Blue, Classic Black, Legal Red), save signatures for 1-tap re-use, export transparent PNGs, and stamp onto PDF pages with custom placement via iText 8.
+- 📇 **Business Card Scanner to vCard**: Smart entity extraction from scanned business cards detecting Full Name, Job Title, Company, Phone Numbers, Email, Website, and Address. 1-tap "Save to Android Contacts" intent and `.vcf` vCard file export.
+- 📊 **Table to CSV Export**: Automatic detection of tabular structures from OCR text and bounding boxes with interactive 2D scrollable table grid preview, clipboard copy, and `.csv` file sharing.
+- 🤖 **Offline AI Summarizer & Key Takeaways**: 100% on-device extractive summarizer producing concise executive digests, bullet takeaways, and key metric extraction without cloud APIs or data leakage.
+
 ### 🖨️ Sharing, Exporting & Workflow
 - 🖨️ **Local Wi-Fi & Virtual PDF Printing**: Stream generated high-resolution PDF pages directly to network printers over Wi-Fi (HP, Canon, Epson, Brother) or print to PDF.
 - 📦 **Batch Operations & ZIP Export**: Long-press to enter multi-select mode. Batch merge, batch categorize, batch delete, or export multiple PDFs into a single ZIP archive.

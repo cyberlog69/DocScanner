@@ -12,6 +12,10 @@ import com.example.docscanner.data.model.Page
 import com.example.docscanner.data.pref.PdfQuality
 import com.example.docscanner.data.pref.ScannerPreferences
 import com.example.docscanner.data.repository.DocumentRepository
+import com.example.docscanner.service.BusinessCardParser
+import com.example.docscanner.service.DocumentSummarizer
+import com.example.docscanner.service.DocumentSummaryResult
+import com.example.docscanner.service.ExtractedContactData
 import com.example.docscanner.service.ExtractedReceiptData
 import com.example.docscanner.service.FileStorageService
 import com.example.docscanner.service.OcrService
@@ -19,7 +23,11 @@ import com.example.docscanner.service.PageData
 import com.example.docscanner.service.PdfAnnotationService
 import com.example.docscanner.service.PdfGenerator
 import com.example.docscanner.service.ReceiptParser
+import com.example.docscanner.service.SignaturePlacement
+import com.example.docscanner.service.SignatureService
 import com.example.docscanner.service.StampConfig
+import com.example.docscanner.service.TableExtractionResult
+import com.example.docscanner.service.TableExtractor
 import com.example.docscanner.service.VaultEncryptionService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -62,6 +70,15 @@ class DocumentDetailViewModel(
             val parsedReceipt = if (doc != null && doc.extractedText.isNotBlank()) {
                 ReceiptParser.parse(doc.extractedText)
             } else null
+            val parsedContact = if (doc != null && doc.extractedText.isNotBlank()) {
+                BusinessCardParser.parse(doc.extractedText)
+            } else null
+            val summary = if (doc != null && doc.extractedText.isNotBlank()) {
+                DocumentSummarizer.summarize(doc.extractedText)
+            } else null
+            val table = if (doc != null && doc.extractedText.isNotBlank()) {
+                TableExtractor.extractTable(doc.extractedText)
+            } else null
 
             _state.update {
                 it.copy(
@@ -69,7 +86,10 @@ class DocumentDetailViewModel(
                     pages = pages,
                     storageBytes = bytes,
                     availableFolders = folders,
-                    extractedReceiptData = parsedReceipt
+                    extractedReceiptData = parsedReceipt,
+                    extractedContactData = parsedContact,
+                    documentSummary = summary,
+                    tableExtractionResult = table
                 )
             }
         }
@@ -568,6 +588,37 @@ class DocumentDetailViewModel(
         }
     }
 
+    /**
+     * Stamps an electronic signature onto the document's PDF.
+     */
+    fun stampSignature(
+        signatureBytes: ByteArray,
+        targetPages: List<Int>,
+        placement: SignaturePlacement,
+        onComplete: (Boolean) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val doc = _state.value.document ?: return@launch
+            if (doc.pdfPath.isBlank()) return@launch
+
+            val pdfFile = File(doc.pdfPath)
+            if (!pdfFile.exists()) return@launch
+
+            val success = SignatureService.stampSignatureOnFile(
+                pdfFile = pdfFile,
+                signaturePngBytes = signatureBytes,
+                targetPages = targetPages,
+                placement = placement
+            )
+            if (success) {
+                loadDocument()
+            }
+            withContext(Dispatchers.Main) {
+                onComplete(success)
+            }
+        }
+    }
+
     companion object {
         fun provideFactory(
             repository: DocumentRepository,
@@ -604,5 +655,8 @@ data class DocumentDetailState(
     val ocrError: String? = null,
     val storageBytes: Long = 0L,
     val availableFolders: List<Folder> = emptyList(),
-    val extractedReceiptData: ExtractedReceiptData? = null
+    val extractedReceiptData: ExtractedReceiptData? = null,
+    val extractedContactData: ExtractedContactData? = null,
+    val documentSummary: DocumentSummaryResult? = null,
+    val tableExtractionResult: TableExtractionResult? = null
 )

@@ -46,21 +46,33 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.filled.ZoomIn
+import com.example.docscanner.service.BusinessCardParser
+import com.example.docscanner.service.DocumentSummarizer
+import com.example.docscanner.service.ExtractedContactData
 import com.example.docscanner.service.PdfAnnotationService
+import com.example.docscanner.service.SignaturePlacement
 import com.example.docscanner.service.StampConfig
 import com.example.docscanner.service.StampPosition
+import com.example.docscanner.service.TableExtractor
+import com.example.docscanner.ui.components.SignaturePadDialog
+import com.example.docscanner.ui.components.TableExportDialog
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Badge
@@ -159,6 +171,8 @@ fun DocumentDetailScreen(
     var showAddTagDialog by remember { mutableStateOf(false) }
     var showSplitDialog by remember { mutableStateOf(false) }
     var showStampDialog by remember { mutableStateOf(false) }
+    var showSignatureDialog by remember { mutableStateOf(false) }
+    var showTableDialog by remember { mutableStateOf(false) }
     var showMoveToFolderDialog by remember { mutableStateOf(false) }
     var zoomPagePath by remember { mutableStateOf<String?>(null) }
     var selectedPdfQuality by remember { mutableStateOf(PdfQuality.UHD_4K) }
@@ -279,6 +293,22 @@ fun DocumentDetailScreen(
                             onClick = {
                                 showMenu = false
                                 showStampDialog = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Sign Document 🖊️") },
+                            leadingIcon = { Icon(Icons.Default.Draw, null) },
+                            onClick = {
+                                showMenu = false
+                                showSignatureDialog = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Extract Table to CSV 📊") },
+                            leadingIcon = { Icon(Icons.Default.TableChart, null) },
+                            onClick = {
+                                showMenu = false
+                                showTableDialog = true
                             }
                         )
                         DropdownMenuItem(
@@ -654,6 +684,258 @@ fun DocumentDetailScreen(
                                 ReceiptFieldRow("Invoice / Bill #", it, context, haptic)
                             }
                         }
+                    }
+                }
+
+                // Extracted Contact / Business Card Card (if available)
+                val contact = state.extractedContactData
+                if (contact != null && contact.hasData) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f)
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text("📇", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    text = "Extracted Business Card & Contact",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            contact.fullName?.let {
+                                ReceiptFieldRow("Full Name", it, context, haptic)
+                            }
+                            contact.jobTitle?.let {
+                                ReceiptFieldRow("Job Title / Role", it, context, haptic)
+                            }
+                            contact.company?.let {
+                                ReceiptFieldRow("Company / Organization", it, context, haptic)
+                            }
+                            contact.phone?.let {
+                                ReceiptFieldRow("Phone (Mobile)", it, context, haptic)
+                            }
+                            contact.alternatePhone?.let {
+                                ReceiptFieldRow("Phone (Work/Other)", it, context, haptic)
+                            }
+                            contact.email?.let {
+                                ReceiptFieldRow("Email Address", it, context, haptic)
+                            }
+                            contact.website?.let {
+                                ReceiptFieldRow("Website / URL", it, context, haptic)
+                            }
+                            contact.address?.let {
+                                ReceiptFieldRow("Address", it, context, haptic)
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = {
+                                        try {
+                                            val intent = BusinessCardParser.createAddContactIntent(contact)
+                                            context.startActivity(intent)
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Cannot launch contacts app", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Save Contact", style = MaterialTheme.typography.labelMedium)
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        try {
+                                            val vcfFile = BusinessCardParser.writeVCardToFile(context, contact)
+                                            val uri = androidx.core.content.FileProvider.getUriForFile(
+                                                context,
+                                                "${context.packageName}.fileprovider",
+                                                vcfFile
+                                            )
+                                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                                type = "text/x-vcard"
+                                                putExtra(Intent.EXTRA_STREAM, uri)
+                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            }
+                                            context.startActivity(Intent.createChooser(intent, "Share vCard (.vcf)"))
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Failed to export vCard: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Share .vcf", style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // AI Insights & Document Summary Card (100% Offline)
+                val summary = state.documentSummary
+                if (summary != null && summary.hasSummary) {
+                    var isExpanded by remember { mutableStateOf(false) }
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("🤖", style = MaterialTheme.typography.titleMedium)
+                                    Column {
+                                        Text(
+                                            text = "AI Insights & Key Takeaways",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = "100% Offline • ${summary.wordCount} words • ~${summary.readingTimeMinutes} min read",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                IconButton(onClick = { isExpanded = !isExpanded }) {
+                                    Icon(
+                                        imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                        contentDescription = if (isExpanded) "Collapse" else "Expand"
+                                    )
+                                }
+                            }
+
+                            if (summary.executiveSummary.isNotBlank()) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text(
+                                    text = summary.executiveSummary,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+
+                            if (isExpanded) {
+                                if (summary.keyTakeaways.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text(
+                                        text = "Key Highlights:",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    summary.keyTakeaways.forEach { bullet ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 2.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Text("•", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                            Text(
+                                                text = bullet,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                    }
+                                }
+
+                                if (summary.keyMetrics.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text(
+                                        text = "Prominent Figures & Metrics:",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    FlowRow(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        summary.keyMetrics.forEach { metric ->
+                                            AssistChip(
+                                                onClick = {
+                                                    val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Metric", metric))
+                                                    Toast.makeText(context, "$metric copied", Toast.LENGTH_SHORT).show()
+                                                },
+                                                label = { Text(metric, style = MaterialTheme.typography.labelSmall) }
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(12.dp))
+                                OutlinedButton(
+                                    onClick = {
+                                        val fullSummaryText = buildString {
+                                            appendLine("DOCUMENT SUMMARY")
+                                            appendLine(summary.executiveSummary)
+                                            if (summary.keyTakeaways.isNotEmpty()) {
+                                                appendLine("\nKEY TAKEAWAYS:")
+                                                summary.keyTakeaways.forEach { appendLine("• $it") }
+                                            }
+                                            if (summary.keyMetrics.isNotEmpty()) {
+                                                appendLine("\nKEY METRICS:")
+                                                appendLine(summary.keyMetrics.joinToString(", "))
+                                            }
+                                        }
+                                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                        clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Summary", fullSummaryText))
+                                        Toast.makeText(context, "Summary copied to clipboard! 📋", Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Copy Full Summary", style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Extracted Table quick button (if detected)
+                val tableData = state.tableExtractionResult
+                if (tableData != null && tableData.hasTable) {
+                    FilledTonalButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { showTableDialog = true }
+                    ) {
+                        Icon(Icons.Default.TableChart, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("View Extracted Table (${tableData.rowCount} Rows, ${tableData.columnCount} Cols) 📊")
                     }
                 }
 
@@ -1500,6 +1782,54 @@ fun DocumentDetailScreen(
                     Text("Cancel")
                 }
             }
+        )
+    }
+
+    // ── Electronic Signature Pad Dialog ───────────────────────────────────────
+    if (showSignatureDialog) {
+        SignaturePadDialog(
+            currentPageNumber = selectedPageIndex,
+            totalPages = pages.size,
+            onDismiss = { showSignatureDialog = false },
+            onStampPdf = { signatureBytes, targetPages, placement ->
+                showSignatureDialog = false
+                viewModel.stampSignature(signatureBytes, targetPages, placement) { success ->
+                    Toast.makeText(
+                        context,
+                        if (success) "Signature applied to PDF! 🖊️" else "Failed to sign PDF",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            },
+            onSharePng = { pngBytes ->
+                try {
+                    val file = File(context.cacheDir, "signature_${System.currentTimeMillis()}.png")
+                    file.writeBytes(pngBytes)
+                    val uri = androidx.core.content.FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.fileprovider",
+                        file
+                    )
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "image/png"
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(Intent.createChooser(intent, "Share Signature PNG"))
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Error sharing signature: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        )
+    }
+
+    // ── Table to CSV Export Dialog ────────────────────────────────────────────
+    if (showTableDialog) {
+        val tableResult = state.tableExtractionResult ?: TableExtractor.extractTable(doc?.extractedText ?: "")
+        TableExportDialog(
+            docTitle = doc?.title ?: "Document",
+            tableResult = tableResult,
+            onDismiss = { showTableDialog = false }
         )
     }
 }
