@@ -8,7 +8,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.docscanner"
+        applicationId = "com.cyberlog.docscanner"
         minSdk = 24
         targetSdk = 36
         versionCode = 8
@@ -24,7 +24,7 @@ android {
         }
         create("github") {
             dimension = "distribution"
-            applicationId = "com.cyberlog.docscanner.sideload"
+            applicationId = "com.cyberlog.docscanner"
             buildConfigField("Boolean", "ENABLE_GITHUB_UPDATER", "true")
         }
     }
