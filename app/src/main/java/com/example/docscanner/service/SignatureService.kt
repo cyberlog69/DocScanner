@@ -3,6 +3,9 @@ package com.example.docscanner.service
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
 import android.util.Log
 import com.itextpdf.io.image.ImageDataFactory
 import com.itextpdf.kernel.geom.Rectangle
@@ -138,6 +141,55 @@ object SignatureService {
             Log.e(TAG, "Failed to write stamped PDF file", e)
             false
         }
+    }
+
+    /**
+     * Stamps an electronic signature onto a page Bitmap, respecting placement, aspect ratio, and scaling.
+     */
+    fun stampSignatureOnBitmap(
+        baseBitmap: Bitmap,
+        signatureBitmap: Bitmap,
+        placement: SignaturePlacement = SignaturePlacement.BOTTOM_RIGHT,
+        signatureWidthScale: Float = 0.28f
+    ): Bitmap {
+        val resultBitmap = baseBitmap.copy(Bitmap.Config.ARGB_8888, true)
+        val canvas = Canvas(resultBitmap)
+
+        val aspect = if (signatureBitmap.width > 0) {
+            signatureBitmap.height.toFloat() / signatureBitmap.width.toFloat()
+        } else 0.5f
+
+        val sigWidth = (resultBitmap.width * signatureWidthScale).coerceIn(120f, resultBitmap.width * 0.7f)
+        val sigHeight = sigWidth * aspect
+        val margin = (resultBitmap.width * 0.05f).coerceIn(24f, 120f)
+
+        val (x, y) = when (placement) {
+            SignaturePlacement.BOTTOM_RIGHT -> Pair(resultBitmap.width - sigWidth - margin, resultBitmap.height - sigHeight - margin)
+            SignaturePlacement.BOTTOM_LEFT -> Pair(margin, resultBitmap.height - sigHeight - margin)
+            SignaturePlacement.BOTTOM_CENTER -> Pair((resultBitmap.width - sigWidth) / 2f, resultBitmap.height - sigHeight - margin)
+            SignaturePlacement.CENTER -> Pair((resultBitmap.width - sigWidth) / 2f, (resultBitmap.height - sigHeight) / 2f)
+            SignaturePlacement.TOP_RIGHT -> Pair(resultBitmap.width - sigWidth - margin, margin)
+        }
+
+        val destRect = RectF(x, y, x + sigWidth, y + sigHeight)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        canvas.drawBitmap(signatureBitmap, null, destRect, paint)
+        return resultBitmap
+    }
+
+    /**
+     * Stamps an electronic signature (from PNG byte array) onto a page Bitmap.
+     */
+    fun stampSignatureOnBitmap(
+        baseBitmap: Bitmap,
+        signaturePngBytes: ByteArray,
+        placement: SignaturePlacement = SignaturePlacement.BOTTOM_RIGHT,
+        signatureWidthScale: Float = 0.28f
+    ): Bitmap {
+        val sigBitmap = BitmapFactory.decodeByteArray(signaturePngBytes, 0, signaturePngBytes.size) ?: return baseBitmap
+        val result = stampSignatureOnBitmap(baseBitmap, sigBitmap, placement, signatureWidthScale)
+        sigBitmap.recycle()
+        return result
     }
 
     /**

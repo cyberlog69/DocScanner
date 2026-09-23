@@ -1,5 +1,11 @@
 package com.example.docscanner.service
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
+import android.graphics.Typeface
 import android.util.Log
 import com.itextpdf.io.font.constants.StandardFonts
 import com.itextpdf.kernel.colors.ColorConstants
@@ -152,6 +158,117 @@ object PdfAnnotationService {
             Log.e("PdfAnnotationService", "Failed to write stamped bytes to ${file.name}", e)
             false
         }
+    }
+
+    /**
+     * Stamps an annotation / watermark directly onto a page Bitmap matching the visual appearance.
+     */
+    fun stampWatermarkOnBitmap(baseBitmap: Bitmap, config: StampConfig): Bitmap {
+        if (config.text.isBlank()) return baseBitmap
+
+        val resultBitmap = baseBitmap.copy(Bitmap.Config.ARGB_8888, true)
+        val canvas = Canvas(resultBitmap)
+
+        val rgb = parseColorHex(config.colorHex)
+        val alphaInt = ((config.opacity.coerceIn(0.1f, 1.0f)) * 255).toInt()
+        val colorInt = Color.argb(alphaInt, rgb[0], rgb[1], rgb[2])
+
+        when (config.position) {
+            StampPosition.CENTER_WATERMARK -> {
+                val fontSize = (resultBitmap.width / 8f).coerceAtLeast(36f)
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = colorInt
+                    textSize = fontSize
+                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                    textAlign = Paint.Align.CENTER
+                }
+
+                canvas.save()
+                canvas.rotate(-45f, resultBitmap.width / 2f, resultBitmap.height / 2f)
+
+                val fontMetrics = paint.fontMetrics
+                val baselineOffset = (fontMetrics.descent + fontMetrics.ascent) / 2f
+                canvas.drawText(
+                    config.text,
+                    resultBitmap.width / 2f,
+                    (resultBitmap.height / 2f) - baselineOffset,
+                    paint
+                )
+                canvas.restore()
+            }
+            StampPosition.TOP_HEADER -> {
+                val fontSize = (resultBitmap.width * 0.045f).coerceIn(28f, 96f)
+                val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = colorInt
+                    textSize = fontSize
+                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                    textAlign = Paint.Align.CENTER
+                }
+                val textWidth = textPaint.measureText(config.text)
+                val fontMetrics = textPaint.fontMetrics
+                val textHeight = fontMetrics.descent - fontMetrics.ascent
+
+                val centerX = resultBitmap.width / 2f
+                val topMargin = (resultBitmap.height * 0.04f).coerceIn(30f, 120f)
+                val baselineY = topMargin + textHeight
+
+                val padX = fontSize * 0.6f
+                val padY = fontSize * 0.3f
+                val borderRect = RectF(
+                    centerX - textWidth / 2f - padX,
+                    topMargin - padY,
+                    centerX + textWidth / 2f + padX,
+                    topMargin + textHeight + padY
+                )
+
+                val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = colorInt
+                    style = Paint.Style.STROKE
+                    strokeWidth = (fontSize * 0.08f).coerceAtLeast(3f)
+                }
+                val cornerRadius = fontSize * 0.3f
+                canvas.drawRoundRect(borderRect, cornerRadius, cornerRadius, strokePaint)
+
+                canvas.drawText(config.text, centerX, baselineY, textPaint)
+            }
+            StampPosition.BOTTOM_FOOTER -> {
+                val fontSize = (resultBitmap.width * 0.04f).coerceIn(24f, 84f)
+                val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = colorInt
+                    textSize = fontSize
+                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                    textAlign = Paint.Align.CENTER
+                }
+                val textWidth = textPaint.measureText(config.text)
+                val fontMetrics = textPaint.fontMetrics
+                val textHeight = fontMetrics.descent - fontMetrics.ascent
+
+                val centerX = resultBitmap.width / 2f
+                val bottomMargin = (resultBitmap.height * 0.04f).coerceIn(30f, 120f)
+                val baselineY = resultBitmap.height - bottomMargin - fontMetrics.descent
+
+                val padX = fontSize * 0.6f
+                val padY = fontSize * 0.3f
+                val borderRect = RectF(
+                    centerX - textWidth / 2f - padX,
+                    baselineY + fontMetrics.ascent - padY,
+                    centerX + textWidth / 2f + padX,
+                    baselineY + fontMetrics.descent + padY
+                )
+
+                val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = colorInt
+                    style = Paint.Style.STROKE
+                    strokeWidth = (fontSize * 0.08f).coerceAtLeast(3f)
+                }
+                val cornerRadius = fontSize * 0.3f
+                canvas.drawRoundRect(borderRect, cornerRadius, cornerRadius, strokePaint)
+
+                canvas.drawText(config.text, centerX, baselineY, textPaint)
+            }
+        }
+
+        return resultBitmap
     }
 
     private fun parseColorHex(hex: String): IntArray {

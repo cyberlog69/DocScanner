@@ -28,10 +28,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import java.io.File
 
 /**
@@ -64,6 +66,10 @@ fun ZoomableImageDialog(
         ) {
             var scale by remember { mutableFloatStateOf(1f) }
             var offset by remember { mutableStateOf(Offset.Zero) }
+
+            val context = LocalContext.current
+            val file = remember(imagePath) { File(imagePath) }
+            val lastModified = remember(imagePath) { file.lastModified() }
 
             Box(
                 modifier = Modifier
@@ -98,7 +104,11 @@ fun ZoomableImageDialog(
                 contentAlignment = Alignment.Center
             ) {
                 AsyncImage(
-                    model = File(imagePath),
+                    model = ImageRequest.Builder(context)
+                        .data(file)
+                        .memoryCacheKey("${imagePath}_$lastModified")
+                        .diskCacheKey("${imagePath}_$lastModified")
+                        .build(),
                     contentDescription = "Zoomable Page Image",
                     contentScale = ContentScale.Fit,
                     modifier = Modifier

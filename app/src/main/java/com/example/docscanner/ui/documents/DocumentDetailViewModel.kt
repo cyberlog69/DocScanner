@@ -167,6 +167,7 @@ class DocumentDetailViewModel(
                 }
                 // Re-fetch document & pages
                 loadDocument()
+                _state.update { it.copy(imageVersion = System.currentTimeMillis()) }
             }
         }
     }
@@ -568,19 +569,70 @@ class DocumentDetailViewModel(
     }
 
     /**
-     * Stamps an annotation / watermark onto the document's PDF.
+     * Stamps an annotation / watermark onto every page image and the document's PDF.
      */
     fun stampPdf(config: StampConfig, onComplete: (Boolean) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             val doc = _state.value.document ?: return@launch
-            if (doc.pdfPath.isBlank()) return@launch
+            val pages = _state.value.pages
+            if (pages.isEmpty()) return@launch
 
-            val pdfFile = File(doc.pdfPath)
-            if (!pdfFile.exists()) return@launch
+            var anyBitmapUpdated = false
 
-            val success = PdfAnnotationService.stampPdfFile(pdfFile, config)
+            // 1. Stamp watermark onto every page bitmap
+            for (page in pages) {
+                val originalBitmap = fileStorageService.loadBitmap(page.imagePath)
+                if (originalBitmap != null) {
+                    val stampedBitmap = PdfAnnotationService.stampWatermarkOnBitmap(
+                        baseBitmap = originalBitmap,
+                        config = config
+                    )
+                    fileStorageService.saveBitmapToPath(stampedBitmap, page.imagePath)
+                    anyBitmapUpdated = true
+
+                    if (page.pageIndex == 0) {
+                        fileStorageService.saveThumbnail(stampedBitmap, documentId)
+                    }
+
+                    if (stampedBitmap !== originalBitmap) stampedBitmap.recycle()
+                    originalBitmap.recycle()
+                }
+            }
+
+            // 2. Also stamp onto the PDF file if present
+            var pdfStamped = false
+            if (doc.pdfPath.isNotBlank()) {
+                val pdfFile = File(doc.pdfPath)
+                if (pdfFile.exists()) {
+                    pdfStamped = PdfAnnotationService.stampPdfFile(pdfFile, config)
+                }
+            }
+
+            // 3. If PDF was missing or direct stamp failed, regenerate from stamped page bitmaps
+            if (!pdfStamped && anyBitmapUpdated) {
+                val settings = preferences.settings.value
+                val allPageData = pages.mapNotNull { p ->
+                    fileStorageService.loadBitmap(p.imagePath)?.let { PageData(it, p.extractedText) }
+                }
+                if (allPageData.isNotEmpty()) {
+                    val newPdfBytes = pdfGenerator.generatePdf(allPageData, doc.title, settings.pdfQuality)
+                    fileStorageService.savePdf(newPdfBytes, documentId)
+                    allPageData.forEach { it.bitmap.recycle() }
+                }
+            }
+
+            val success = anyBitmapUpdated || pdfStamped
             if (success) {
+                val newTimestamp = System.currentTimeMillis()
+                repository.updateDocumentMeta(
+                    id = doc.id,
+                    pageCount = pages.size,
+                    thumbnailPath = doc.thumbnailPath,
+                    pdfPath = doc.pdfPath,
+                    extractedText = doc.extractedText
+                )
                 loadDocument()
+                _state.update { it.copy(imageVersion = newTimestamp) }
             }
             withContext(Dispatchers.Main) {
                 onComplete(success)
@@ -589,7 +641,7 @@ class DocumentDetailViewModel(
     }
 
     /**
-     * Stamps an electronic signature onto the document's PDF.
+     * Stamps an electronic signature onto the targeted page images and the document's PDF.
      */
     fun stampSignature(
         signatureBytes: ByteArray,
@@ -599,19 +651,75 @@ class DocumentDetailViewModel(
     ) {
         viewModelScope.launch(Dispatchers.IO) {
             val doc = _state.value.document ?: return@launch
-            if (doc.pdfPath.isBlank()) return@launch
+            val pages = _state.value.pages
+            if (pages.isEmpty()) return@launch
 
-            val pdfFile = File(doc.pdfPath)
-            if (!pdfFile.exists()) return@launch
+            var anyBitmapUpdated = false
 
-            val success = SignatureService.stampSignatureOnFile(
-                pdfFile = pdfFile,
-                signaturePngBytes = signatureBytes,
-                targetPages = targetPages,
-                placement = placement
-            )
+            // 1. Stamp onto the specified page bitmaps
+            val targetPageIndices = targetPages.map { it - 1 }.toSet()
+            for (page in pages) {
+                if (page.pageIndex in targetPageIndices) {
+                    val originalBitmap = fileStorageService.loadBitmap(page.imagePath)
+                    if (originalBitmap != null) {
+                        val stampedBitmap = SignatureService.stampSignatureOnBitmap(
+                            baseBitmap = originalBitmap,
+                            signaturePngBytes = signatureBytes,
+                            placement = placement
+                        )
+                        fileStorageService.saveBitmapToPath(stampedBitmap, page.imagePath)
+                        anyBitmapUpdated = true
+
+                        // If page 0 is stamped, update document thumbnail
+                        if (page.pageIndex == 0) {
+                            fileStorageService.saveThumbnail(stampedBitmap, documentId)
+                        }
+
+                        if (stampedBitmap !== originalBitmap) stampedBitmap.recycle()
+                        originalBitmap.recycle()
+                    }
+                }
+            }
+
+            // 2. Also stamp onto the underlying PDF if present
+            var pdfStamped = false
+            if (doc.pdfPath.isNotBlank()) {
+                val pdfFile = File(doc.pdfPath)
+                if (pdfFile.exists()) {
+                    pdfStamped = SignatureService.stampSignatureOnFile(
+                        pdfFile = pdfFile,
+                        signaturePngBytes = signatureBytes,
+                        targetPages = targetPages,
+                        placement = placement
+                    )
+                }
+            }
+
+            // 3. If PDF was missing or direct stamp failed, regenerate from stamped pages
+            if (!pdfStamped && anyBitmapUpdated) {
+                val settings = preferences.settings.value
+                val allPageData = pages.mapNotNull { p ->
+                    fileStorageService.loadBitmap(p.imagePath)?.let { PageData(it, p.extractedText) }
+                }
+                if (allPageData.isNotEmpty()) {
+                    val newPdfBytes = pdfGenerator.generatePdf(allPageData, doc.title, settings.pdfQuality)
+                    fileStorageService.savePdf(newPdfBytes, documentId)
+                    allPageData.forEach { it.bitmap.recycle() }
+                }
+            }
+
+            val success = anyBitmapUpdated || pdfStamped
             if (success) {
+                val newTimestamp = System.currentTimeMillis()
+                repository.updateDocumentMeta(
+                    id = doc.id,
+                    pageCount = pages.size,
+                    thumbnailPath = doc.thumbnailPath,
+                    pdfPath = doc.pdfPath,
+                    extractedText = doc.extractedText
+                )
                 loadDocument()
+                _state.update { it.copy(imageVersion = newTimestamp) }
             }
             withContext(Dispatchers.Main) {
                 onComplete(success)
@@ -658,5 +766,6 @@ data class DocumentDetailState(
     val extractedReceiptData: ExtractedReceiptData? = null,
     val extractedContactData: ExtractedContactData? = null,
     val documentSummary: DocumentSummaryResult? = null,
-    val tableExtractionResult: TableExtractionResult? = null
+    val tableExtractionResult: TableExtractionResult? = null,
+    val imageVersion: Long = 0L
 )

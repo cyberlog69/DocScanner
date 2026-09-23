@@ -37,6 +37,20 @@ class FileStorageService(
         return file.absolutePath
     }
 
+    /** Saves or overwrites a bitmap to a specific file path on disk. */
+    fun saveBitmapToPath(bitmap: Bitmap, path: String, quality: Int = 95): Boolean {
+        return try {
+            val file = File(path)
+            file.parentFile?.mkdirs()
+            FileOutputStream(file).use { out ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, quality.coerceIn(50, 100), out)
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     /** Saves a small thumbnail for the document list, preserving the original aspect ratio. */
     fun saveThumbnail(bitmap: Bitmap, documentId: String): String {
         val maxWidth = 300

@@ -120,6 +120,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.example.docscanner.model.DocumentCategory
 import com.example.docscanner.model.DocumentMetricsCalculator
 import com.example.docscanner.data.pref.PdfQuality
@@ -485,7 +486,11 @@ fun DocumentDetailScreen(
                     ) {
                         Box(modifier = Modifier.fillMaxSize()) {
                             AsyncImage(
-                                model = currentPage.imagePath,
+                                model = ImageRequest.Builder(context)
+                                    .data(File(currentPage.imagePath))
+                                    .memoryCacheKey("${currentPage.imagePath}_${state.imageVersion}")
+                                    .diskCacheKey("${currentPage.imagePath}_${state.imageVersion}")
+                                    .build(),
                                 contentDescription = "Page ${selectedPageIndex + 1}",
                                 modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Fit
@@ -559,7 +564,11 @@ fun DocumentDetailScreen(
                                     } else null
                                 ) {
                                     AsyncImage(
-                                        model = page.imagePath,
+                                        model = ImageRequest.Builder(context)
+                                            .data(File(page.imagePath))
+                                            .memoryCacheKey("${page.imagePath}_${state.imageVersion}")
+                                            .diskCacheKey("${page.imagePath}_${state.imageVersion}")
+                                            .build(),
                                         contentDescription = "Page thumbnail ${index + 1}",
                                         modifier = Modifier.fillMaxSize(),
                                         contentScale = ContentScale.Crop
