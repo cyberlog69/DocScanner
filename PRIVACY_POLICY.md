@@ -1,4 +1,4 @@
-﻿# Privacy Policy for DocScanner
+# Privacy Policy for DocScanner
 
 **Effective Date:** September 7, 2026  
 **Last Updated:** September 7, 2026  
@@ -45,7 +45,7 @@ DocScanner requests only the minimum permissions necessary to deliver document s
 
 DocScanner utilizes the following on-device open-source libraries:
 - **Google ML Kit Document Scanner & Text Recognition:** Operates with pre-bundled offline models. No scanned imagery or extracted text is transmitted to Google.
-- **iText 7 / Apache PDFBox:** Used for on-device PDF synthesis and text-layer overlay.
+- **Apache PDFBox:** Used for on-device PDF synthesis and text-layer overlay.
 
 ---
 

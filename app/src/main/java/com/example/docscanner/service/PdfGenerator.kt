@@ -3,18 +3,17 @@ package com.example.docscanner.service
 import android.graphics.Bitmap
 import android.util.Log
 import com.example.docscanner.data.pref.PdfQuality
-import com.itextpdf.io.image.ImageDataFactory
-import com.itextpdf.kernel.geom.PageSize
-import com.itextpdf.kernel.pdf.PdfDocument
-import com.itextpdf.kernel.pdf.PdfPage
-import com.itextpdf.kernel.pdf.PdfWriter
-import com.itextpdf.kernel.pdf.canvas.PdfCanvas
-import com.itextpdf.layout.Document
-import com.itextpdf.layout.element.Image
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.pdmodel.PDPage
+import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
+import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
+import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
+import com.tom_roush.pdfbox.pdmodel.graphics.image.JPEGFactory
+import com.tom_roush.pdfbox.pdmodel.graphics.state.RenderingMode
 import java.io.ByteArrayOutputStream
 
 /**
- * Generates searchable PDFs from scanned page images + OCR text.
+ * Generates searchable PDFs from scanned page images + OCR text using Apache PDFBox (Apache 2.0).
  * Each page has a high-fidelity image layer (visible) + invisible text layer (searchable).
  */
 class PdfGenerator {
@@ -31,19 +30,23 @@ class PdfGenerator {
         val outputStream = ByteArrayOutputStream()
 
         try {
-            val pdfWriter = PdfWriter(outputStream)
-            val pdfDoc = PdfDocument(pdfWriter)
-            pdfDoc.documentInfo.title = title
-            val document = Document(pdfDoc)
+            val document = PDDocument()
+            document.documentInformation.title = title
 
-            pages.forEachIndexed { index, pageData ->
-                addPageToPdf(document, pdfDoc, pageData, index, quality)
+            val qualityRatio = when (quality) {
+                PdfQuality.UHD_4K -> 1.0f
+                PdfQuality.HIGH -> 0.92f
+                PdfQuality.STANDARD -> 0.80f
             }
 
+            for (pageData in pages) {
+                addPageToPdf(document, pageData, qualityRatio)
+            }
+
+            document.save(outputStream)
             document.close()
-            pdfDoc.close()
         } catch (e: Exception) {
-            Log.e("PdfGenerator", "Error generating searchable PDF with iText, falling back to basic image PDF", e)
+            Log.e("PdfGenerator", "Error generating searchable PDF with PDFBox, falling back to basic image PDF", e)
             return generateBasicPdf(pages, title, quality)
         }
 
@@ -51,84 +54,62 @@ class PdfGenerator {
     }
 
     private fun addPageToPdf(
-        document: Document,
-        pdfDoc: PdfDocument,
+        document: PDDocument,
         pageData: PageData,
-        pageIndex: Int,
-        quality: PdfQuality
+        qualityRatio: Float
     ) {
         val bitmap = pageData.bitmap
+        val bitmapAspect = if (bitmap.height > 0) bitmap.width.toFloat() / bitmap.height.toFloat() else 0.7f
+        val pageWidth = PDRectangle.A4.width
+        val pageHeight = if (bitmapAspect > 0f) pageWidth / bitmapAspect else PDRectangle.A4.height
 
-        // Determine page dimensions based on aspect ratio & DPI profile
-        val bitmapAspect = bitmap.width.toFloat() / bitmap.height.toFloat()
-        val pageWidth = PageSize.A4.width
-        val pageHeight = pageWidth / bitmapAspect
+        val pdPage = PDPage(PDRectangle(pageWidth, pageHeight))
+        document.addPage(pdPage)
 
-        val pageSize = PageSize(pageWidth, pageHeight)
-        val page = pdfDoc.addNewPage(pageSize)
+        val pdImage = JPEGFactory.createFromImage(document, bitmap, qualityRatio)
+        val contentStream = PDPageContentStream(document, pdPage)
+        contentStream.drawImage(pdImage, 0f, 0f, pageWidth, pageHeight)
 
-        // Add high-resolution image layer with quality profile
-        val bitmapBytes = bitmapToBytes(bitmap, quality)
-        val imageData = ImageDataFactory.create(bitmapBytes)
-        val pdfImage = Image(imageData)
-            .scaleToFit(pageWidth, pageHeight)
-            .setFixedPosition(pdfDoc.getPageNumber(page), 0f, 0f)
-        document.add(pdfImage)
-
-        // Add invisible text layer for searchability
         if (pageData.extractedText.isNotBlank()) {
-            addInvisibleTextLayer(page, pageData, pageWidth, pageHeight)
+            addInvisibleTextLayer(contentStream, pageData.extractedText, pageWidth, pageHeight)
         }
+
+        contentStream.close()
     }
 
     private fun addInvisibleTextLayer(
-        page: PdfPage,
-        pageData: PageData,
+        contentStream: PDPageContentStream,
+        extractedText: String,
         pageWidth: Float,
         pageHeight: Float
     ) {
         try {
-            val canvas = PdfCanvas(page)
-            canvas.beginText()
-            canvas.setTextRenderingMode(3) // Invisible rendering mode
-            canvas.setFontAndSize(
-                com.itextpdf.kernel.font.PdfFontFactory.createFont(
-                    com.itextpdf.io.font.constants.StandardFonts.HELVETICA
-                ),
-                12f
-            )
+            contentStream.beginText()
+            contentStream.setFont(PDType1Font.HELVETICA, 12f)
+            contentStream.setRenderingMode(RenderingMode.NEITHER) // Invisible rendering mode
 
-            // Place text lines at absolute coordinates via text matrix to prevent position drift
-            val lines = pageData.extractedText.split("\n").filter { it.isNotBlank() }
+            val lines = extractedText.split("\n").filter { it.isNotBlank() }
             val lineHeight = (pageHeight - 40f) / lines.size.coerceAtLeast(1)
-            lines.forEachIndexed { i, line ->
+
+            var lastY = 0f
+            for ((i, line) in lines.withIndex()) {
                 val y = pageHeight - 20f - (i * lineHeight)
-                canvas.setTextMatrix(1f, 0f, 0f, 1f, 20f, y)
-                canvas.showText(line)
+                val cleanLine = line.replace(Regex("[\\p{Cntrl}&&[^\r\n\t]]"), "")
+                if (i == 0) {
+                    contentStream.newLineAtOffset(20f, y)
+                } else {
+                    contentStream.newLineAtOffset(0f, y - lastY)
+                }
+                lastY = y
+                try {
+                    contentStream.showText(cleanLine)
+                } catch (_: Exception) {}
             }
-            canvas.endText()
+
+            contentStream.endText()
         } catch (e: Exception) {
             Log.w("PdfGenerator", "Failed to add invisible OCR text layer to PDF page", e)
         }
-    }
-
-    private fun bitmapToBytes(bitmap: Bitmap, quality: PdfQuality): ByteArray {
-        val stream = ByteArrayOutputStream()
-        when (quality) {
-            PdfQuality.UHD_4K -> {
-                // 100% Ultra High-Definition / Maximum native fidelity
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 100, stream)
-            }
-            PdfQuality.HIGH -> {
-                // High Quality 300 DPI target
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 92, stream)
-            }
-            PdfQuality.STANDARD -> {
-                // Standard Quality 150 DPI target
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 80, stream)
-            }
-        }
-        return stream.toByteArray()
     }
 
     /**
@@ -140,27 +121,36 @@ class PdfGenerator {
         quality: PdfQuality
     ): ByteArray {
         val outputStream = ByteArrayOutputStream()
-        val pdfWriter = PdfWriter(outputStream)
-        val pdfDoc = PdfDocument(pdfWriter)
-        pdfDoc.documentInfo.title = title
+        val document = PDDocument()
+        document.documentInformation.title = title
 
-        pages.forEach { pageData ->
-            val bitmap = pageData.bitmap
-            val bitmapAspect = bitmap.width.toFloat() / bitmap.height.toFloat()
-            val pageWidth = PageSize.A4.width
-            val pageHeight = pageWidth / bitmapAspect
-            pdfDoc.addNewPage(PageSize(pageWidth, pageHeight))
-
-            val bitmapBytes = bitmapToBytes(bitmap, quality)
-            val imageData = ImageDataFactory.create(bitmapBytes)
-            val pdfImage = Image(imageData)
-                .setFixedPosition(0f, 0f)
-                .scaleToFit(pageWidth, pageHeight)
-            val document = Document(pdfDoc)
-            document.add(pdfImage)
+        val qualityRatio = when (quality) {
+            PdfQuality.UHD_4K -> 1.0f
+            PdfQuality.HIGH -> 0.92f
+            PdfQuality.STANDARD -> 0.80f
         }
 
-        pdfDoc.close()
+        try {
+            for (pageData in pages) {
+                val bitmap = pageData.bitmap
+                val bitmapAspect = if (bitmap.height > 0) bitmap.width.toFloat() / bitmap.height.toFloat() else 0.7f
+                val pageWidth = PDRectangle.A4.width
+                val pageHeight = if (bitmapAspect > 0f) pageWidth / bitmapAspect else PDRectangle.A4.height
+
+                val pdPage = PDPage(PDRectangle(pageWidth, pageHeight))
+                document.addPage(pdPage)
+
+                val pdImage = JPEGFactory.createFromImage(document, bitmap, qualityRatio)
+                val contentStream = PDPageContentStream(document, pdPage)
+                contentStream.drawImage(pdImage, 0f, 0f, pageWidth, pageHeight)
+                contentStream.close()
+            }
+
+            document.save(outputStream)
+        } finally {
+            document.close()
+        }
+
         return outputStream.toByteArray()
     }
 }

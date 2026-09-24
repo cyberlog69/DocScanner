@@ -7,15 +7,12 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.util.Log
-import com.itextpdf.io.font.constants.StandardFonts
-import com.itextpdf.kernel.colors.ColorConstants
-import com.itextpdf.kernel.colors.DeviceRgb
-import com.itextpdf.kernel.font.PdfFontFactory
-import com.itextpdf.kernel.pdf.PdfDocument
-import com.itextpdf.kernel.pdf.PdfReader
-import com.itextpdf.kernel.pdf.PdfWriter
-import com.itextpdf.kernel.pdf.canvas.PdfCanvas
-import com.itextpdf.kernel.pdf.extgstate.PdfExtGState
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
+import com.tom_roush.pdfbox.pdmodel.PDPageContentStream.AppendMode
+import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
+import com.tom_roush.pdfbox.pdmodel.graphics.state.PDExtendedGraphicsState
+import com.tom_roush.pdfbox.util.Matrix
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -49,95 +46,97 @@ object PdfAnnotationService {
     )
 
     /**
-     * Stamps an annotation/watermark onto every page of the given PDF bytes.
+     * Stamps an annotation/watermark onto every page of the given PDF bytes using Apache PDFBox (Apache 2.0).
      */
     fun stampPdf(pdfBytes: ByteArray, config: StampConfig): ByteArray {
         if (pdfBytes.isEmpty() || config.text.isBlank()) return pdfBytes
 
         val outputStream = ByteArrayOutputStream()
         try {
-            val reader = PdfReader(ByteArrayInputStream(pdfBytes))
-            val writer = PdfWriter(outputStream)
-            val pdfDoc = PdfDocument(reader, writer)
-            val font = PdfFontFactory.createFont(StandardFonts.HELVETICA_BOLD)
+            val document = PDDocument.load(ByteArrayInputStream(pdfBytes))
+            val font = PDType1Font.HELVETICA_BOLD
 
             val rgb = parseColorHex(config.colorHex)
-            val itextColor = DeviceRgb(rgb[0], rgb[1], rgb[2])
+            val r = rgb[0] / 255f
+            val g = rgb[1] / 255f
+            val b = rgb[2] / 255f
 
-            val numPages = pdfDoc.numberOfPages
-            for (i in 1..numPages) {
-                val page = pdfDoc.getPage(i)
-                val pageSize = page.pageSize
-                val canvas = PdfCanvas(page.newContentStreamAfter(), page.resources, pdfDoc)
+            val numPages = document.numberOfPages
+            for (i in 0 until numPages) {
+                val page = document.getPage(i)
+                val mediaBox = page.mediaBox
+                val contentStream = PDPageContentStream(document, page, AppendMode.APPEND, true, true)
 
-                val extGState = PdfExtGState().apply {
-                    fillOpacity = config.opacity
-                    strokeOpacity = config.opacity
+                val extGState = PDExtendedGraphicsState().apply {
+                    nonStrokingAlphaConstant = config.opacity
+                    strokingAlphaConstant = config.opacity
                 }
-                canvas.setExtGState(extGState)
-                canvas.setColor(itextColor, true)
-                canvas.setColor(itextColor, false)
+                contentStream.setGraphicsStateParameters(extGState)
+                contentStream.setNonStrokingColor(r, g, b)
+                contentStream.setStrokingColor(r, g, b)
 
                 when (config.position) {
                     StampPosition.CENTER_WATERMARK -> {
-                        val fontSize = pageSize.width / 8f
-                        canvas.setFontAndSize(font, fontSize)
-                        val textWidth = font.getWidth(config.text, fontSize)
+                        val fontSize = mediaBox.width / 8f
+                        val textWidth = font.getStringWidth(config.text) / 1000f * fontSize
                         val angle = 45.0
                         val rad = angle * PI / 180.0
                         val cosA = cos(rad).toFloat()
                         val sinA = sin(rad).toFloat()
 
-                        val centerX = pageSize.width / 2f
-                        val centerY = pageSize.height / 2f
+                        val centerX = mediaBox.width / 2f
+                        val centerY = mediaBox.height / 2f
                         val textOffsetX = textWidth / 2f
 
                         val startX = centerX - textOffsetX * cosA
                         val startY = centerY - textOffsetX * sinA
 
-                        canvas.beginText()
-                        canvas.setTextMatrix(cosA, sinA, -sinA, cosA, startX, startY)
-                        canvas.showText(config.text)
-                        canvas.endText()
+                        contentStream.beginText()
+                        contentStream.setFont(font, fontSize)
+                        val matrix = Matrix(cosA, sinA, -sinA, cosA, startX, startY)
+                        contentStream.setTextMatrix(matrix)
+                        contentStream.showText(config.text)
+                        contentStream.endText()
                     }
                     StampPosition.TOP_HEADER -> {
                         val fontSize = 28f
-                        canvas.setFontAndSize(font, fontSize)
-                        val textWidth = font.getWidth(config.text, fontSize)
-                        val x = (pageSize.width - textWidth) / 2f
-                        val y = pageSize.height - 50f
+                        val textWidth = font.getStringWidth(config.text) / 1000f * fontSize
+                        val x = (mediaBox.width - textWidth) / 2f
+                        val y = mediaBox.height - 50f
 
-                        // Draw subtle rounded border rectangle around header stamp
-                        canvas.rectangle((x - 16f).toDouble(), (y - 8f).toDouble(), (textWidth + 32f).toDouble(), (fontSize + 16f).toDouble())
-                        canvas.setLineWidth(2f)
-                        canvas.stroke()
+                        contentStream.addRect(x - 16f, y - 8f, textWidth + 32f, fontSize + 16f)
+                        contentStream.setLineWidth(2f)
+                        contentStream.stroke()
 
-                        canvas.beginText()
-                        canvas.moveText(x.toDouble(), y.toDouble())
-                        canvas.showText(config.text)
-                        canvas.endText()
+                        contentStream.beginText()
+                        contentStream.setFont(font, fontSize)
+                        contentStream.newLineAtOffset(x, y)
+                        contentStream.showText(config.text)
+                        contentStream.endText()
                     }
                     StampPosition.BOTTOM_FOOTER -> {
                         val fontSize = 24f
-                        canvas.setFontAndSize(font, fontSize)
-                        val textWidth = font.getWidth(config.text, fontSize)
-                        val x = (pageSize.width - textWidth) / 2f
+                        val textWidth = font.getStringWidth(config.text) / 1000f * fontSize
+                        val x = (mediaBox.width - textWidth) / 2f
                         val y = 40f
 
-                        canvas.rectangle((x - 16f).toDouble(), (y - 6f).toDouble(), (textWidth + 32f).toDouble(), (fontSize + 12f).toDouble())
-                        canvas.setLineWidth(2f)
-                        canvas.stroke()
+                        contentStream.addRect(x - 16f, y - 6f, textWidth + 32f, fontSize + 12f)
+                        contentStream.setLineWidth(2f)
+                        contentStream.stroke()
 
-                        canvas.beginText()
-                        canvas.moveText(x.toDouble(), y.toDouble())
-                        canvas.showText(config.text)
-                        canvas.endText()
+                        contentStream.beginText()
+                        contentStream.setFont(font, fontSize)
+                        contentStream.newLineAtOffset(x, y)
+                        contentStream.showText(config.text)
+                        contentStream.endText()
                     }
                 }
-                canvas.release()
+
+                contentStream.close()
             }
 
-            pdfDoc.close()
+            document.save(outputStream)
+            document.close()
             return outputStream.toByteArray()
         } catch (e: Exception) {
             Log.e("PdfAnnotationService", "Error stamping PDF", e)

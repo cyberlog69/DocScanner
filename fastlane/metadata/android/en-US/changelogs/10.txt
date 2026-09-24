@@ -1,0 +1,4 @@
+- License Compliance: Migrated PDF rendering, text layer overlay, and signature stamping from iText (AGPLv3) to Apache PDFBox (Apache 2.0).
+- Multiplatform Architecture Parity: Promoted ReceiptParser, TableExtractor, BusinessCardParser, and DocumentSummarizer to Kotlin Multiplatform commonMain for full cross-platform parity.
+- Database Migrations: Refactored database upgrade logic into modular, verifiable DatabaseMigration objects for safe incremental schema updates.
+- 100% Offline, Zero Network Requests, Zero Telemetry.

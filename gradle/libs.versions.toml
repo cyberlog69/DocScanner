@@ -20,8 +20,8 @@ mlkitDocumentScanner = "16.0.0-beta1"
 coil = "2.7.0"
 # Kotlinx Coroutines
 kotlinxCoroutines = "1.10.2"
-# iText (PDF generation)
-itext = "8.0.5"
+# Apache PDFBox for Android (Apache 2.0)
+pdfbox = "2.0.27.0"
 # Koin (Dependency Injection)
 koin = "4.0.2"
 
@@ -69,9 +69,8 @@ mlkit-document-scanner = { module = "com.google.android.gms:play-services-mlkit-
 # Coil
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
 
-# iText PDF
-itext-core = { module = "com.itextpdf:itext-core", version.ref = "itext" }
-itext-bouncy-castle = { module = "com.itextpdf:bouncy-castle-adapter", version.ref = "itext" }
+# Apache PDFBox for Android (Apache 2.0)
+pdfbox = { module = "com.tom-roush:pdfbox-android", version.ref = "pdfbox" }
 
 # Kotlinx
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }

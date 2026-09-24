@@ -1,4 +1,4 @@
-﻿pluginManagement {
+pluginManagement {
     repositories {
         google()
         mavenCentral()
@@ -10,9 +10,6 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven {
-            url = uri("https://repo.itextsupport.com/releases")
-        }
     }
 }
 

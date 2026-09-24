@@ -1,12 +1,8 @@
-# ── iText 7 ──────────────────────────────────────────────────────────────────
--keep class com.itextpdf.** { *; }
--dontwarn com.itextpdf.**
-# BouncyCastle (bundled with iText for PDF encryption)
--keep class org.bouncycastle.** { *; }
--dontwarn org.bouncycastle.**
-
-# ── SLF4J (used by iText 7) ───────────────────────────────────────────────────
--dontwarn org.slf4j.**
+# ── Apache PDFBox for Android (Apache 2.0) ────────────────────────────────────
+-keep class com.tom_roush.pdfbox.** { *; }
+-dontwarn com.tom_roush.pdfbox.**
+-keep class org.apache.fontbox.** { *; }
+-dontwarn org.apache.fontbox.**
 
 # ── ML Kit ───────────────────────────────────────────────────────────────────
 -keep class com.google.mlkit.** { *; }

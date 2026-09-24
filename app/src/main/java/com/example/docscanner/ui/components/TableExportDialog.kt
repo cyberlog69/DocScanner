@@ -52,6 +52,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
 import com.example.docscanner.service.TableExtractionResult
 import com.example.docscanner.service.TableExtractor
+import com.example.docscanner.service.writeCsvToFile
 
 @Composable
 fun TableExportDialog(

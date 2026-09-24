@@ -4,18 +4,15 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import com.example.docscanner.model.Page
 import com.example.docscanner.model.PdfQuality
-import com.itextpdf.io.image.ImageDataFactory
-import com.itextpdf.kernel.colors.ColorConstants
-import com.itextpdf.kernel.font.PdfFontFactory
-import com.itextpdf.kernel.geom.PageSize
-import com.itextpdf.kernel.pdf.PdfDocument
-import com.itextpdf.kernel.pdf.PdfWriter
-import com.itextpdf.kernel.pdf.canvas.PdfCanvas
-import com.itextpdf.layout.Document
-import com.itextpdf.layout.element.Image
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.pdmodel.PDPage
+import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
+import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
+import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
+import com.tom_roush.pdfbox.pdmodel.graphics.image.JPEGFactory
+import com.tom_roush.pdfbox.pdmodel.graphics.state.RenderingMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayOutputStream
 import java.io.File
 
 actual class PlatformPdfGenerator {
@@ -29,40 +26,38 @@ actual class PlatformPdfGenerator {
         val outputFile = File(outputPath)
         outputFile.parentFile?.mkdirs()
 
-        val writer = PdfWriter(outputFile)
-        val pdfDoc = PdfDocument(writer)
-        val document = Document(pdfDoc)
-        document.setMargins(0f, 0f, 0f, 0f)
+        val document = PDDocument()
+        document.documentInformation.title = title
 
         try {
-            for ((index, page) in pages.withIndex()) {
+            for (page in pages) {
                 val imageFile = File(page.imagePath)
                 if (!imageFile.exists()) continue
 
                 val originalBitmap = BitmapFactory.decodeFile(imageFile.absolutePath) ?: continue
-                val processedBytes = processBitmapForQuality(originalBitmap, quality)
+                val imgWidth = originalBitmap.width.toFloat()
+                val imgHeight = originalBitmap.height.toFloat()
+
+                val a4Width = PDRectangle.A4.width
+                val pageHeight = if (imgWidth > 0f) a4Width * (imgHeight / imgWidth) else PDRectangle.A4.height
+                val pdPage = PDPage(PDRectangle(a4Width, pageHeight))
+                document.addPage(pdPage)
+
+                val qualityRatio = (quality.compressionQuality / 100f).coerceIn(0.1f, 1.0f)
+                val pdImage = JPEGFactory.createFromImage(document, originalBitmap, qualityRatio)
                 originalBitmap.recycle()
 
-                val imageData = ImageDataFactory.create(processedBytes)
-                val imgWidth = imageData.width
-                val imgHeight = imageData.height
+                val contentStream = PDPageContentStream(document, pdPage)
+                contentStream.drawImage(pdImage, 0f, 0f, a4Width, pageHeight)
 
-                val pageSize = PageSize(imgWidth, imgHeight)
-                if (index > 0) {
-                    pdfDoc.addNewPage(pageSize)
-                }
-
-                val image = Image(imageData).apply {
-                    setFixedPosition(index + 1, 0f, 0f, imgWidth)
-                    scaleToFit(imgWidth, imgHeight)
-                }
-                document.add(image)
-
-                // Add invisible OCR text overlay
                 if (page.extractedText.isNotBlank()) {
-                    addInvisibleTextLayer(pdfDoc, index + 1, page.extractedText, imgWidth, imgHeight)
+                    addInvisibleTextLayer(contentStream, page.extractedText, a4Width, pageHeight)
                 }
+
+                contentStream.close()
             }
+
+            document.save(outputFile)
         } finally {
             document.close()
         }
@@ -70,46 +65,38 @@ actual class PlatformPdfGenerator {
         outputFile.absolutePath
     }
 
-    private fun processBitmapForQuality(original: Bitmap, quality: PdfQuality): ByteArray {
-        val stream = ByteArrayOutputStream()
-        original.compress(Bitmap.CompressFormat.JPEG, quality.compressionQuality, stream)
-        return stream.toByteArray()
-    }
-
     private fun addInvisibleTextLayer(
-        pdfDoc: PdfDocument,
-        pageNumber: Int,
+        contentStream: PDPageContentStream,
         text: String,
         pageWidth: Float,
         pageHeight: Float
     ) {
         try {
-            val pdfPage = pdfDoc.getPage(pageNumber)
-            val canvas = PdfCanvas(pdfPage.newContentStreamBefore(), pdfPage.resources, pdfDoc)
-
-            canvas.saveState()
-            val font = PdfFontFactory.createFont()
-            canvas.setFontAndSize(font, 10f)
-            canvas.setFillColor(ColorConstants.WHITE)
-
-            // Text rendering mode 3 = invisible text
-            canvas.setTextRenderingMode(3)
-            canvas.beginText()
+            contentStream.beginText()
+            contentStream.setFont(PDType1Font.HELVETICA, 10f)
+            contentStream.setRenderingMode(RenderingMode.NEITHER) // Invisible text mode
 
             val lines = text.split("\n").filter { it.isNotBlank() }
             val lineSpacing = if (lines.isNotEmpty()) (pageHeight - 40f) / (lines.size + 1) else 14f
 
+            var lastY = 0f
             for ((i, line) in lines.withIndex()) {
                 val yPosition = pageHeight - 30f - (i * lineSpacing)
                 if (yPosition > 10f) {
-                    canvas.moveText(20.0, yPosition.toDouble())
-                    canvas.showText(line)
-                    canvas.moveText(-20.0, -yPosition.toDouble())
+                    val cleanLine = line.replace(Regex("[\\p{Cntrl}&&[^\r\n\t]]"), "")
+                    if (i == 0) {
+                        contentStream.newLineAtOffset(20f, yPosition)
+                    } else {
+                        contentStream.newLineAtOffset(0f, yPosition - lastY)
+                    }
+                    lastY = yPosition
+                    try {
+                        contentStream.showText(cleanLine)
+                    } catch (_: Exception) {}
                 }
             }
 
-            canvas.endText()
-            canvas.restoreState()
+            contentStream.endText()
         } catch (_: Exception) {
             // Soft failure for text layer; image remains preserved
         }

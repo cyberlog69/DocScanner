@@ -11,6 +11,10 @@ data class DocumentSummaryResult(
         get() = executiveSummary.isNotBlank() || keyTakeaways.isNotEmpty()
 }
 
+/**
+ * 100% offline, on-device extractive summarizer and key takeaway extractor.
+ * Multiplatform: Shared between Android and iOS.
+ */
 object DocumentSummarizer {
 
     private val STOP_WORDS = setOf(
@@ -51,13 +55,11 @@ object DocumentSummarizer {
         val wordCount = allWords.size
         val readingTime = (wordCount / 200).coerceAtLeast(1)
 
-        // Split text into candidate sentences
         val rawSentences = splitIntoSentences(ocrText)
         if (rawSentences.isEmpty()) {
             return DocumentSummaryResult(wordCount = wordCount, readingTimeMinutes = readingTime)
         }
 
-        // Build frequency dictionary of non-stop words
         val wordFreq = mutableMapOf<String, Int>()
         for (word in allWords) {
             val clean = word.lowercase().trim { !it.isLetterOrDigit() }
@@ -66,7 +68,6 @@ object DocumentSummarizer {
             }
         }
 
-        // Score sentences
         val scoredSentences = rawSentences.mapIndexed { index, sentence ->
             val words = sentence.split(Regex("""\s+""")).map { it.lowercase().trim { c -> !c.isLetterOrDigit() } }
             var score = 0.0
@@ -74,16 +75,13 @@ object DocumentSummarizer {
                 score += wordFreq[w] ?: 0
             }
 
-            // Length normalization: prefer concise, punchy sentences (10 to 30 words)
             val len = words.size.coerceAtLeast(1)
             score /= kotlin.math.sqrt(len.toDouble())
 
-            // Lead sentence bonus (first 2 sentences often state topic)
             if (index < 2) {
                 score *= 1.35
             }
 
-            // Metric bonus (contains numbers, amounts, dates)
             if (METRIC_REGEX.containsMatchIn(sentence)) {
                 score *= 1.25
             }
@@ -91,21 +89,18 @@ object DocumentSummarizer {
             ScoredSentence(index = index, text = sentence.trim(), score = score)
         }
 
-        // Top 2-3 sentences for executive summary, ordered chronologically
         val topSummary = scoredSentences
             .sortedByDescending { it.score }
             .take(3)
             .sortedBy { it.index }
             .map { it.text }
 
-        // Top 4-5 bullet takeaways
         val topTakeaways = scoredSentences
             .sortedByDescending { it.score }
             .take(5)
             .map { cleanBullet(it.text) }
             .distinct()
 
-        // Extract key metrics & figures
         val metrics = METRIC_REGEX.findAll(ocrText)
             .map { it.value.trim() }
             .distinct()
@@ -139,7 +134,6 @@ object DocumentSummarizer {
                 continue
             }
 
-            // Split on standard sentence delimiters followed by space or line end
             val sentenceParts = line.split(Regex("""(?<=[.!?])\s+"""))
             for (part in sentenceParts) {
                 val trimmed = part.trim()

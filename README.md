@@ -38,12 +38,12 @@
 - 🗄️ **100% Offline Backup & Restore (.zip)**: Export entire database records, page bitmaps, thumbnails, and PDFs into a portable ZIP archive. Restore on any device without internet.
 - 🔒 **Encrypted Document Vault**: Hardware-backed Android Keystore AES-256 GCM authenticated encryption at rest for sensitive documents, isolated from main list and FTS4 search with biometric unlock.
 - 🧾 **Smart Financial Data Extraction**: Pure local regex & heuristic parsing on OCR text extracting Merchant, Date, Total Amount, Tax/GST, and Invoice # with 1-tap copy actions.
-- 📝 **PDF Watermark Stamps & Annotations**: Stamp documents with customizable watermarks (APPROVED, CONFIDENTIAL, PAID, COPY, etc.) or custom banners with custom opacity via iText 7.
+- 📝 **PDF Watermark Stamps & Annotations**: Stamp documents with customizable watermarks (APPROVED, CONFIDENTIAL, PAID, COPY, etc.) or custom banners with custom opacity via Apache PDFBox.
 - 🔄 **Add Pages to Existing Document**: Re-scan or import additional pages directly into any saved document, re-indexing pages and rebuilding the searchable PDF.
 - 📂 **Hierarchical Folder Organization**: Create custom color-coded folders, organize documents, and filter with scrollable chips and document counts.
 
 ### ⚡ Power Features (100% Offline)
-- 🖊️ **Electronic Signature Pad**: Draw smooth signatures with fine/medium/bold Bezier curves, select ink colors (Signature Blue, Classic Black, Legal Red), save signatures for 1-tap re-use, export transparent PNGs, and stamp onto PDF pages with custom placement via iText 8.
+- 🖊️ **Electronic Signature Pad**: Draw smooth signatures with fine/medium/bold Bezier curves, select ink colors (Signature Blue, Classic Black, Legal Red), save signatures for 1-tap re-use, export transparent PNGs, and stamp onto PDF pages with custom placement via Apache PDFBox.
 - 📇 **Business Card Scanner to vCard**: Smart entity extraction from scanned business cards detecting Full Name, Job Title, Company, Phone Numbers, Email, Website, and Address. 1-tap "Save to Android Contacts" intent and `.vcf` vCard file export.
 - 📊 **Table to CSV Export**: Automatic detection of tabular structures from OCR text and bounding boxes with interactive 2D scrollable table grid preview, clipboard copy, and `.csv` file sharing.
 - 🤖 **Offline AI Summarizer & Key Takeaways**: 100% on-device extractive summarizer producing concise executive digests, bullet takeaways, and key metric extraction without cloud APIs or data leakage.
@@ -74,7 +74,7 @@ DocScanner
 │   │       ├── di/                 # SharedModule (Koin Multiplatform DI)
 │   │       └── bridge/             # expect class: PlatformOcrEngine, PlatformBiometrics, PlatformPdfGenerator, PlatformStorage
 │   ├── src/commonTest/             # Multiplatform Unit Test Suite (100% pass rate)
-│   ├── src/androidMain/            # Android actual implementations (ML Kit, BiometricPrompt, iText 7)
+│   ├── src/androidMain/            # Android actual implementations (ML Kit, BiometricPrompt, Apache PDFBox)
 │   └── src/iosMain/                # iOS actual implementations (Apple VisionKit, Vision OCR, LocalAuth, PDFKit)
 ├── app/                            # Android Application module (Jetpack Compose UI & Koin DI)
 ├── iosApp/                         # iOS Application (SwiftUI host embedding KMP framework)
@@ -92,7 +92,7 @@ DocScanner
 | **Document Scanner** | Google Play Services Document Scanner | Apple **VisionKit** (`VNDocumentCameraViewController`) |
 | **Offline OCR Engine**| Google ML Kit Text Recognition v2 | Apple **Vision Framework** (`VNRecognizeTextRequest`) |
 | **App Lock / Security**| AndroidX Biometric (`BiometricPrompt`) | Apple **LocalAuthentication** (Face ID / Touch ID) |
-| **PDF Generation** | iText 7 (Core + Bouncy Castle) | Apple **PDFKit** (`PDFDocument` / `PDFPage`) |
+| **PDF Generation** | Apache PDFBox (`pdfbox-android`) | Apple **PDFKit** (`PDFDocument` / `PDFPage`) |
 | **Printing** | Android Native `PrintManager` & `PrintDocumentAdapter` | iOS `UIPrintInteractionController` |
 | **File Sandbox** | Android Context `filesDir` & `FileProvider` | Apple Foundation `NSFileManager` Documents |
 | **Image Loading** | Coil Compose | UIKit `UIImage` / SwiftUI `AsyncImage` |
@@ -130,7 +130,7 @@ DocScanner is designed from the ground up for strict offline privacy:
 This project is licensed under the **Apache License 2.0**. See the [LICENSE](LICENSE) file for details.
 
 ### Third-Party Libraries & Notices
-- **iText 7/8 Core (`com.itextpdf:itext-core`)**: Distributed under the **GNU AGPLv3** open-source license and available under commercial licensing from Apryse/iText Group NV. If you build or distribute commercial derivative works without making source available under AGPLv3, an iText commercial license is required.
+- **Apache PDFBox (`com.tom-roush:pdfbox-android`)**: Distributed under the **Apache License 2.0**. Full PDF manipulation, searchable text-layer overlay, watermark stamps, and signature embedding without AGPL restrictions.
 - **Google ML Kit**: Distributed under Google APIs Terms of Service and Apache 2.0 components.
 - **Bouncy Castle Adapter**: Distributed under the Bouncy Castle License (MIT-derivative).
 - **Apple Vision / VisionKit / PDFKit / LocalAuthentication**: Native iOS system frameworks provided under Apple Developer Agreement.

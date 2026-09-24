@@ -1,9 +1,9 @@
 package com.example.docscanner.service
 
-import com.itextpdf.kernel.pdf.PdfDocument
-import com.itextpdf.kernel.pdf.PdfWriter
-import com.itextpdf.layout.Document
-import com.itextpdf.layout.element.Paragraph
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.pdmodel.PDPage
+import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
+import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -13,19 +13,34 @@ class PdfAnnotationAndSignatureTest {
 
     private fun createSamplePdf(): ByteArray {
         val stream = ByteArrayOutputStream()
-        val writer = PdfWriter(stream)
-        val pdf = PdfDocument(writer)
-        val doc = Document(pdf)
-        doc.add(Paragraph("Sample Page 1 Content"))
-        pdf.addNewPage()
-        doc.add(Paragraph("Sample Page 2 Content"))
-        doc.close()
-        pdf.close()
+        val document = PDDocument()
+
+        val page1 = PDPage()
+        document.addPage(page1)
+        val stream1 = PDPageContentStream(document, page1)
+        stream1.beginText()
+        stream1.setFont(PDType1Font.HELVETICA, 12f)
+        stream1.newLineAtOffset(50f, 700f)
+        stream1.showText("Sample Page 1 Content")
+        stream1.endText()
+        stream1.close()
+
+        val page2 = PDPage()
+        document.addPage(page2)
+        val stream2 = PDPageContentStream(document, page2)
+        stream2.beginText()
+        stream2.setFont(PDType1Font.HELVETICA, 12f)
+        stream2.newLineAtOffset(50f, 700f)
+        stream2.showText("Sample Page 2 Content")
+        stream2.endText()
+        stream2.close()
+
+        document.save(stream)
+        document.close()
         return stream.toByteArray()
     }
 
     private fun create1x1PngBytes(): ByteArray {
-        // Minimal valid 1x1 transparent PNG bytes
         return byteArrayOf(
             0x89.toByte(), 0x50.toByte(), 0x4E.toByte(), 0x47.toByte(),
             0x0D.toByte(), 0x0A.toByte(), 0x1A.toByte(), 0x0A.toByte(),

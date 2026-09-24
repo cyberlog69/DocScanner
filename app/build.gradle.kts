@@ -11,8 +11,8 @@ android {
         applicationId = "com.cyberlog.docscanner"
         minSdk = 24
         targetSdk = 36
-        versionCode = 9
-        versionName = "1.8.1"
+        versionCode = 10
+        versionName = "1.8.2"
     }
 
     flavorDimensions += "distribution"
@@ -70,6 +70,11 @@ android {
             )
         }
     }
+    testOptions {
+        unitTests {
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 dependencies {
@@ -117,9 +122,8 @@ dependencies {
     // Coil
     implementation(libs.coil.compose)
 
-    // iText PDF
-    implementation(libs.itext.core)
-    implementation(libs.itext.bouncy.castle)
+    // Apache PDFBox for Android (Apache 2.0)
+    implementation(libs.pdfbox)
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)

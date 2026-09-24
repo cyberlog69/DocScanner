@@ -64,6 +64,8 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.filled.ZoomIn
 import com.example.docscanner.service.BusinessCardParser
+import com.example.docscanner.service.createAddContactIntent
+import com.example.docscanner.service.writeVCardToFile
 import com.example.docscanner.service.DocumentSummarizer
 import com.example.docscanner.service.ExtractedContactData
 import com.example.docscanner.service.PdfAnnotationService

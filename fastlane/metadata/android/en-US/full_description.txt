@@ -5,7 +5,7 @@ Designed from the ground up to operate completely offline, DocScanner delivers p
 Key Features:
 - Smart Document Capture: Automatic edge detection, perspective correction, and custom quality profiles (1080p, 2K, 4K UHD / 600 DPI).
 - Offline Multi-Language OCR: Bundled on-device text recognition supporting Latin, Devanagari (Hindi/Marathi/Sanskrit), Simplified Chinese, Japanese, and Korean.
-- Searchable PDF Generation: Creates standard PDF documents with invisible selectable OCR text layers using iText 7.
+- Searchable PDF Generation: Creates standard PDF documents with invisible selectable OCR text layers using Apache PDFBox.
 - Full-Text Search: Ultra-fast offline indexing via SQLite FTS4 allows you to find documents by words inside the text or title.
 - Smart Auto-Categorization: Automatically suggests categories (Receipts, Invoices, ID Cards, Contracts, Books, Notes) based on recognized text keywords.
 - Biometric App Lock: Secure documents using Fingerprint, Face Unlock, or Device PIN/Pattern with a 30-second background grace period.

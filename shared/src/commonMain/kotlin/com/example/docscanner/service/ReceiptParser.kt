@@ -12,6 +12,11 @@ data class ExtractedReceiptData(
         get() = merchantName != null || date != null || totalAmount != null || invoiceNumber != null
 }
 
+/**
+ * 100% offline, pure Kotlin heuristic parser for extracting financial information
+ * (merchant, date, total amount, taxes, invoice number) from OCR text.
+ * Multiplatform: Shared between Android and iOS.
+ */
 object ReceiptParser {
 
     private val DATE_PATTERNS = listOf(
@@ -91,7 +96,6 @@ object ReceiptParser {
     }
 
     private fun extractTotal(lines: List<String>): String? {
-        // Look for explicit total keywords (iterating backwards since totals are near bottom)
         for (line in lines.asReversed()) {
             val lower = line.lowercase()
             for (keyword in TOTAL_KEYWORDS) {
@@ -111,12 +115,10 @@ object ReceiptParser {
             val lower = line.lowercase()
             for (keyword in TAX_KEYWORDS) {
                 if (lower.contains(keyword)) {
-                    // Try to find a currency/number amount first
                     val amountMatch = AMOUNT_REGEX.find(line)
                     if (amountMatch != null) {
                         return amountMatch.value.trim()
                     }
-                    // Or match GSTIN identification pattern (15 alphanumerics in India)
                     val gstinMatch = Regex("""\b\d{2}[A-Z]{5}\d{4}[A-Z]{1}[A-Z\d]{1}[Z]{1}[A-Z\d]{1}\b""").find(line)
                     if (gstinMatch != null) {
                         return gstinMatch.value

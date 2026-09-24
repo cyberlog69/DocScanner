@@ -48,8 +48,7 @@ kotlin {
             implementation(libs.mlkit.text.recognition.japanese)
             implementation(libs.mlkit.text.recognition.korean)
             implementation(libs.mlkit.document.scanner)
-            implementation(libs.itext.core)
-            implementation(libs.itext.bouncy.castle)
+            implementation(libs.pdfbox)
         }
         iosMain.dependencies {
             // Native iOS frameworks (Vision, VisionKit, LocalAuthentication, PDFKit) are provided by Kotlin/Native
