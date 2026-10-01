@@ -15,3 +15,6 @@ local.properties
 releases/
 .kotlin/
 
+# Roadmap & planning files
+[Rr][Oo][Aa][Dd][Mm][Aa][Pp]*
+
