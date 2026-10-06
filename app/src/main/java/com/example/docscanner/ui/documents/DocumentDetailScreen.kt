@@ -73,6 +73,18 @@ import com.example.docscanner.service.SignaturePlacement
 import com.example.docscanner.service.StampConfig
 import com.example.docscanner.service.StampPosition
 import com.example.docscanner.service.TableExtractor
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Crop
+import androidx.compose.material.icons.filled.Reorder
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import com.example.docscanner.ui.components.PageCropDialog
+import com.example.docscanner.ui.components.PageReorderDialog
 import com.example.docscanner.ui.components.SignaturePadDialog
 import com.example.docscanner.ui.components.TableExportDialog
 import androidx.compose.material3.AlertDialog
@@ -177,6 +189,9 @@ fun DocumentDetailScreen(
     var showSignatureDialog by remember { mutableStateOf(false) }
     var showTableDialog by remember { mutableStateOf(false) }
     var showMoveToFolderDialog by remember { mutableStateOf(false) }
+    var showReorderDialog by remember { mutableStateOf(false) }
+    var showCropDialog by remember { mutableStateOf(false) }
+    var isCroppingPage by remember { mutableStateOf(false) }
     var zoomPagePath by remember { mutableStateOf<String?>(null) }
     var selectedPdfQuality by remember { mutableStateOf(PdfQuality.UHD_4K) }
     var selectedPageIndex by remember { mutableIntStateOf(0) }
@@ -220,6 +235,51 @@ fun DocumentDetailScreen(
     }
 
     Scaffold(
+        modifier = Modifier.onPreviewKeyEvent { event ->
+            if (event.type == KeyEventType.KeyDown) {
+                val isCtrl = event.isCtrlPressed || event.isMetaPressed
+                when {
+                    event.key == Key.DirectionLeft || event.key == Key.PageUp -> {
+                        if (selectedPageIndex > 0) {
+                            selectedPageIndex--
+                            true
+                        } else false
+                    }
+                    event.key == Key.DirectionRight || event.key == Key.PageDown -> {
+                        if (selectedPageIndex < pages.size - 1) {
+                            selectedPageIndex++
+                            true
+                        } else false
+                    }
+                    isCtrl && event.key == Key.R -> {
+                        pages.getOrNull(selectedPageIndex)?.let { page ->
+                            HapticHelper.click(haptic)
+                            viewModel.rotatePage(page, 90f)
+                        }
+                        true
+                    }
+                    isCtrl && event.key == Key.P -> {
+                        doc?.pdfPath?.let { path ->
+                            printDocument(context, doc.title, path)
+                        }
+                        true
+                    }
+                    isCtrl && (event.key == Key.S || event.key == Key.E) -> {
+                        showPdfQualityDialog = true
+                        true
+                    }
+                    event.key == Key.Delete -> {
+                        showDeletePageDialog = true
+                        true
+                    }
+                    event.key == Key.Escape -> {
+                        onNavigateBack()
+                        true
+                    }
+                    else -> false
+                }
+            } else false
+        },
         topBar = {
             TopAppBar(
                 title = {
@@ -391,6 +451,59 @@ fun DocumentDetailScreen(
                                 viewModel.rerunOcrAll()
                             }
                         )
+                        if (pages.size > 1) {
+                            DropdownMenuItem(
+                                text = { Text("Reorder Pages 🔁") },
+                                leadingIcon = { Icon(Icons.Default.Reorder, null) },
+                                onClick = {
+                                    showMenu = false
+                                    showReorderDialog = true
+                                }
+                            )
+                        }
+                        DropdownMenuItem(
+                            text = { Text("Re-crop Page ✂️") },
+                            leadingIcon = { Icon(Icons.Default.Crop, null) },
+                            enabled = pages.getOrNull(selectedPageIndex) != null,
+                            onClick = {
+                                showMenu = false
+                                showCropDialog = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Auto-Rotate Page 📐") },
+                            leadingIcon = { Icon(Icons.Default.AutoAwesome, null) },
+                            enabled = pages.getOrNull(selectedPageIndex) != null && !state.isOcrRunning,
+                            onClick = {
+                                showMenu = false
+                                pages.getOrNull(selectedPageIndex)?.let { p ->
+                                    viewModel.autoRotatePage(p) { deg ->
+                                        if (deg != 0) {
+                                            Toast.makeText(context, "Auto-rotated $deg° 📐", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            Toast.makeText(context, "Page is already upright! ✨", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                            }
+                        )
+                        if (pages.size > 1) {
+                            DropdownMenuItem(
+                                text = { Text("Auto-Rotate All Pages 🪄") },
+                                leadingIcon = { Icon(Icons.Default.AutoAwesome, null) },
+                                enabled = !state.isOcrRunning,
+                                onClick = {
+                                    showMenu = false
+                                    viewModel.autoRotateAllPages { count ->
+                                        if (count > 0) {
+                                            Toast.makeText(context, "Auto-rotated $count page(s) upright 🪄", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            Toast.makeText(context, "All pages are already upright! ✨", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text("Split document at page ${selectedPageIndex + 1}") },
                             leadingIcon = { Icon(Icons.AutoMirrored.Filled.RotateRight, null) },
@@ -545,8 +658,30 @@ fun DocumentDetailScreen(
                         }
                     }
 
-                    // Multi-page thumbnail strip
+                    // Multi-page thumbnail strip & Reorder Shortcut
                     if (pages.size > 1) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Pages (${pages.size})",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            TextButton(
+                                onClick = {
+                                    HapticHelper.click(haptic)
+                                    showReorderDialog = true
+                                }
+                            ) {
+                                Icon(Icons.Default.Reorder, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Reorder Pages")
+                            }
+                        }
+
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             contentPadding = PaddingValues(horizontal = 4.dp)
@@ -580,10 +715,10 @@ fun DocumentDetailScreen(
                         }
                     }
 
-                    // Page action buttons (Rotate & Delete page)
+                    // Page action buttons (Rotate, Auto-Rotate, Crop, Delete)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         OutlinedButton(
@@ -598,6 +733,45 @@ fun DocumentDetailScreen(
                             Icon(Icons.AutoMirrored.Filled.RotateRight, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("Rotate 90°")
+                        }
+
+                        OutlinedButton(
+                            modifier = Modifier.weight(1f),
+                            enabled = !state.isOcrRunning,
+                            onClick = {
+                                pages.getOrNull(selectedPageIndex)?.let { page ->
+                                    HapticHelper.click(haptic)
+                                    viewModel.autoRotatePage(page) { deg ->
+                                        if (deg != 0) {
+                                            Toast.makeText(context, "Auto-rotated $deg° 📐", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            Toast.makeText(context, "Page is already upright! ✨", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Auto-Rotate")
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                HapticHelper.click(haptic)
+                                showCropDialog = true
+                            }
+                        ) {
+                            Icon(Icons.Default.Crop, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Re-crop ✂️")
                         }
 
                         OutlinedButton(
@@ -1842,6 +2016,54 @@ fun DocumentDetailScreen(
             tableResult = tableResult,
             onDismiss = { showTableDialog = false }
         )
+    }
+
+    // ── Multi-Page Reorder Dialog ─────────────────────────────────────────────
+    if (showReorderDialog && pages.size > 1) {
+        PageReorderDialog(
+            pages = pages,
+            imageVersion = state.imageVersion,
+            onDismiss = { showReorderDialog = false },
+            onSaveOrder = { reorderedPages ->
+                showReorderDialog = false
+                viewModel.saveReorderedPages(reorderedPages) { success ->
+                    Toast.makeText(
+                        context,
+                        if (success) "Pages reordered successfully 🔁" else "Failed to reorder pages",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        )
+    }
+
+    // ── Interactive Quadrilateral Page Re-crop Dialog ────────────────────────
+    if (showCropDialog) {
+        val currentPage = pages.getOrNull(selectedPageIndex)
+        if (currentPage != null) {
+            PageCropDialog(
+                page = currentPage,
+                imageVersion = state.imageVersion,
+                isCropping = isCroppingPage,
+                onDismiss = {
+                    if (!isCroppingPage) showCropDialog = false
+                },
+                onApplyCrop = { quad ->
+                    isCroppingPage = true
+                    viewModel.recropPage(currentPage, quad) { success ->
+                        isCroppingPage = false
+                        showCropDialog = false
+                        Toast.makeText(
+                            context,
+                            if (success) "Page cropped successfully ✂️" else "Failed to crop page",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            )
+        } else {
+            showCropDialog = false
+        }
     }
 }
 

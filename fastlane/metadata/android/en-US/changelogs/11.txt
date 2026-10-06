@@ -1,0 +1,6 @@
+- Multi-Page Drag & Reorder: Reorder pages interactively with accessible controls, live thumbnail sequence preview, and automatic PDF regeneration.
+- Interactive Page Re-crop: 4-point quadrilateral corner handles with real-time perspective warp, edge detection, and on-device OCR re-extraction.
+- Smart Merge Suggestions: Automatically detect scans from the same session (<25m) with matching categories and merge them into one document in a single tap.
+- Auto-Rotate Correction: ML Kit baseline angle analysis and clustering detects sideways and upside-down pages and auto-rotates upright.
+- Hardware Keyboard Navigation: Dedicated keyboard shortcuts for tablets and external keyboards (Ctrl+N, Ctrl+F, Ctrl+R, Ctrl+P, Ctrl+S, Esc).
+- 100% Offline, Zero Network Requests, Zero Telemetry.

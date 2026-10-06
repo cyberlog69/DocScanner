@@ -6,6 +6,15 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import android.widget.Toast
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import com.example.docscanner.service.MergeSuggestion
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -141,6 +150,7 @@ fun DocumentListScreen(
     val updateCheckState by viewModel.updateCheckState.collectAsStateWithLifecycle()
     val downloadProgress by viewModel.downloadProgress.collectAsStateWithLifecycle()
     val isBannerDismissed by viewModel.isBannerDismissed.collectAsStateWithLifecycle()
+    val mergeSuggestions by viewModel.smartMergeSuggestions.collectAsStateWithLifecycle()
 
     val isSelectionMode = selectedDocIds.isNotEmpty()
     val haptic = LocalHapticFeedback.current
@@ -184,7 +194,29 @@ fun DocumentListScreen(
     }
 
     Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        modifier = Modifier
+            .nestedScroll(scrollBehavior.nestedScrollConnection)
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown) {
+                    val isCtrl = event.isCtrlPressed || event.isMetaPressed
+                    when {
+                        isCtrl && event.key == Key.N -> {
+                            onStartScan()
+                            true
+                        }
+                        event.key == Key.Escape -> {
+                            if (isSelectionMode) {
+                                viewModel.clearSelection()
+                                true
+                            } else if (searchQuery.isNotBlank()) {
+                                viewModel.setSearchQuery("")
+                                true
+                            } else false
+                        }
+                        else -> false
+                    }
+                } else false
+            },
         topBar = {
             if (isSelectionMode) {
                 TopAppBar(
@@ -427,6 +459,101 @@ fun DocumentListScreen(
                                 tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f),
                                 modifier = Modifier.size(16.dp)
                             )
+                        }
+                    }
+                }
+            }
+
+            // Smart Merge Suggestion Banner (when scans from the same session detected)
+            val topSuggestion = mergeSuggestions.firstOrNull()
+            if (topSuggestion != null && !isSelectionMode) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "✨ Smart Merge Suggestion",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = { viewModel.dismissMergeSuggestion(topSuggestion.id) },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Dismiss merge suggestion",
+                                    tint = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Text(
+                            text = topSuggestion.reason,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.9f)
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(
+                                onClick = { viewModel.dismissMergeSuggestion(topSuggestion.id) }
+                            ) {
+                                Text(
+                                    "Dismiss",
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Button(
+                                onClick = {
+                                    HapticHelper.confirm(haptic)
+                                    viewModel.applyMergeSuggestion(topSuggestion) { newDocId ->
+                                        Toast.makeText(
+                                            context,
+                                            "Merged ${topSuggestion.allDocuments.size} documents! 📑",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        onNavigateToDocument(newDocId, null)
+                                    }
+                                },
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.tertiary,
+                                    contentColor = MaterialTheme.colorScheme.onTertiary
+                                )
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.CallMerge,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Merge (${topSuggestion.allDocuments.size} docs)")
+                            }
                         }
                     }
                 }

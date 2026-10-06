@@ -58,7 +58,8 @@ class OcrService(
                                 OcrLine(
                                     text = line.text,
                                     confidence = line.confidence,
-                                    boundingBox = line.boundingBox
+                                    boundingBox = line.boundingBox,
+                                    angle = line.angle
                                 )
                             }
                         )
@@ -69,6 +70,24 @@ class OcrService(
                     cont.resumeWithException(e)
                 }
         }
+
+    /**
+     * Detects text baseline orientation and computes recommended auto-rotation correction.
+     */
+    suspend fun detectPageOrientation(bitmap: Bitmap, language: OcrLanguage = OcrLanguage.LATIN): AutoRotateResult {
+        val ocr = recognizeText(bitmap, language)
+        val samples = ocr.blocks.flatMap { block ->
+            block.lines.map { line ->
+                TextOrientationSample(
+                    angleDegrees = line.angle,
+                    confidence = line.confidence,
+                    width = line.boundingBox?.width()?.toFloat() ?: 0f,
+                    height = line.boundingBox?.height()?.toFloat() ?: 0f
+                )
+            }
+        }
+        return AutoRotateDetector.detectCorrection(samples)
+    }
 
     /**
      * Runs OCR on an image file with the specified [language].
@@ -99,5 +118,6 @@ data class OcrBlock(
 data class OcrLine(
     val text: String,
     val confidence: Float,
-    val boundingBox: Rect? = null
+    val boundingBox: Rect? = null,
+    val angle: Float = 0f
 )

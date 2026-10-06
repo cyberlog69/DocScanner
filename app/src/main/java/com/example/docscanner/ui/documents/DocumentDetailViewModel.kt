@@ -12,6 +12,9 @@ import com.example.docscanner.data.model.Page
 import com.example.docscanner.data.pref.PdfQuality
 import com.example.docscanner.data.pref.ScannerPreferences
 import com.example.docscanner.data.repository.DocumentRepository
+import com.example.docscanner.model.Quadrilateral
+import com.example.docscanner.service.AutoRotateDetector
+import com.example.docscanner.service.CropService
 import com.example.docscanner.service.BusinessCardParser
 import com.example.docscanner.service.DocumentSummarizer
 import com.example.docscanner.service.DocumentSummaryResult
@@ -283,6 +286,242 @@ class DocumentDetailViewModel(
             extractedText = combinedText
         )
         loadDocument()
+    }
+
+    /**
+     * Reorders pages by moving page at [fromIndex] to [toIndex] and commits the new order.
+     */
+    fun reorderPages(fromIndex: Int, toIndex: Int) {
+        val currentList = _state.value.pages.toMutableList()
+        if (fromIndex !in currentList.indices || toIndex !in currentList.indices || fromIndex == toIndex) return
+        val item = currentList.removeAt(fromIndex)
+        currentList.add(toIndex, item)
+        saveReorderedPages(currentList)
+    }
+
+    /**
+     * Commits a new ordering of pages for this document, updating SQLite page indices,
+     * rebuilding the primary thumbnail if the cover page changed, and regenerating the PDF.
+     */
+    fun saveReorderedPages(newPages: List<Page>, onComplete: ((Boolean) -> Unit)? = null) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val doc = _state.value.document ?: run {
+                withContext(Dispatchers.Main) { onComplete?.invoke(false) }
+                return@launch
+            }
+            try {
+                val reindexed = newPages.mapIndexed { index, page ->
+                    page.copy(pageIndex = index)
+                }
+                repository.savePages(reindexed)
+
+                // If page 0 changed, update document thumbnail
+                reindexed.firstOrNull()?.let { firstPage ->
+                    val firstBmp = fileStorageService.loadBitmap(firstPage.imagePath)
+                    if (firstBmp != null) {
+                        fileStorageService.saveThumbnail(firstBmp, documentId)
+                        firstBmp.recycle()
+                    }
+                }
+
+                // Update combined text and metadata
+                val combinedText = reindexed.joinToString("\n\n--- Page Break ---\n\n") { it.extractedText }
+
+                // Regenerate searchable PDF with new page sequence
+                val settings = preferences.settings.value
+                val allPageData = reindexed.mapNotNull { p ->
+                    fileStorageService.loadBitmap(p.imagePath)?.let { PageData(it, p.extractedText) }
+                }
+                if (allPageData.isNotEmpty()) {
+                    val newPdfBytes = pdfGenerator.generatePdf(allPageData, doc.title, settings.pdfQuality)
+                    fileStorageService.savePdf(newPdfBytes, documentId)
+                    allPageData.forEach { it.bitmap.recycle() }
+                }
+
+                repository.updateDocumentMeta(
+                    id = documentId,
+                    pageCount = reindexed.size,
+                    thumbnailPath = doc.thumbnailPath,
+                    pdfPath = doc.pdfPath,
+                    extractedText = combinedText
+                )
+
+                loadDocument()
+                _state.update { it.copy(imageVersion = System.currentTimeMillis()) }
+                withContext(Dispatchers.Main) { onComplete?.invoke(true) }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { onComplete?.invoke(false) }
+            }
+        }
+    }
+
+    /**
+     * Re-crops [page] using interactive [corners] coordinates, re-extracts OCR text,
+     * updates the document thumbnail if first page, and regenerates the PDF.
+     */
+    fun recropPage(page: Page, corners: Quadrilateral, onComplete: (Boolean) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val doc = _state.value.document ?: return@launch
+            _state.update { it.copy(isOcrRunning = true, ocrProgressText = "Cropping page ${page.pageIndex + 1}...") }
+            try {
+                // Load original or current image
+                val sourcePath = if (page.originalImagePath.isNotBlank() && File(page.originalImagePath).exists()) {
+                    page.originalImagePath
+                } else {
+                    page.imagePath
+                }
+                val originalBitmap = fileStorageService.decodeSampledBitmap(sourcePath, reqWidth = 4096, reqHeight = 4096)
+                    ?: run {
+                        withContext(Dispatchers.Main) { onComplete(false) }
+                        return@launch
+                    }
+
+                val croppedBitmap = CropService.cropBitmap(originalBitmap, corners)
+                fileStorageService.saveBitmapToPath(croppedBitmap, page.imagePath)
+
+                // Update thumbnail if cover page
+                if (page.pageIndex == 0) {
+                    fileStorageService.saveThumbnail(croppedBitmap, documentId)
+                }
+
+                // Re-run OCR on the newly cropped page
+                _state.update { it.copy(ocrProgressText = "Updating OCR text for cropped page...") }
+                val ocrResult = ocrService.recognizeText(croppedBitmap, preferences.settings.value.ocrLanguage)
+                val updatedPage = page.copy(
+                    extractedText = ocrResult.fullText,
+                    width = croppedBitmap.width,
+                    height = croppedBitmap.height
+                )
+                repository.savePage(updatedPage)
+
+                // Regenerate searchable PDF
+                val pages = repository.getPagesForDocumentSync(documentId)
+                val settings = preferences.settings.value
+                val allPageData = pages.mapNotNull { p ->
+                    fileStorageService.loadBitmap(p.imagePath)?.let { PageData(it, p.extractedText) }
+                }
+                if (allPageData.isNotEmpty()) {
+                    val newPdfBytes = pdfGenerator.generatePdf(allPageData, doc.title, settings.pdfQuality)
+                    fileStorageService.savePdf(newPdfBytes, documentId)
+                    allPageData.forEach { it.bitmap.recycle() }
+                }
+
+                val combinedText = pages.joinToString("\n\n--- Page Break ---\n\n") { it.extractedText }
+                repository.updateDocumentMeta(
+                    id = documentId,
+                    pageCount = pages.size,
+                    thumbnailPath = doc.thumbnailPath,
+                    pdfPath = doc.pdfPath,
+                    extractedText = combinedText
+                )
+
+                if (croppedBitmap !== originalBitmap) croppedBitmap.recycle()
+                originalBitmap.recycle()
+
+                loadDocument()
+                _state.update { it.copy(imageVersion = System.currentTimeMillis()) }
+                withContext(Dispatchers.Main) { onComplete(true) }
+            } catch (e: Exception) {
+                _state.update { it.copy(ocrError = "Crop failed: ${e.message}") }
+                withContext(Dispatchers.Main) { onComplete(false) }
+            } finally {
+                _state.update { it.copy(isOcrRunning = false, ocrProgressText = "") }
+            }
+        }
+    }
+
+    /**
+     * Analyzes OCR text baseline angles and automatically rotates the page upright.
+     * Invokes [onResult] with degrees rotated (0, 90, 180, or 270).
+     */
+    fun autoRotatePage(page: Page, onResult: (Int) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _state.update { it.copy(isOcrRunning = true, ocrProgressText = "Analyzing page orientation...") }
+            try {
+                val bitmap = fileStorageService.decodeSampledBitmap(page.imagePath, 2048, 2048)
+                if (bitmap == null) {
+                    withContext(Dispatchers.Main) { onResult(0) }
+                    return@launch
+                }
+
+                val detection = ocrService.detectPageOrientation(bitmap, preferences.settings.value.ocrLanguage)
+                bitmap.recycle()
+
+                if (detection.needsRotation) {
+                    val deg = detection.suggestedCorrectionDegrees.toFloat()
+                    val success = fileStorageService.rotateImageFile(page.imagePath, deg)
+                    if (success) {
+                        if (page.originalImagePath.isNotBlank() && page.originalImagePath != page.imagePath) {
+                            fileStorageService.rotateImageFile(page.originalImagePath, deg)
+                        }
+                        if (page.pageIndex == 0) {
+                            val newBmp = fileStorageService.loadBitmap(page.imagePath)
+                            if (newBmp != null) {
+                                fileStorageService.saveThumbnail(newBmp, documentId)
+                                newBmp.recycle()
+                            }
+                        }
+                        // Re-run OCR and rebuild PDF with upright text
+                        rerunOcrOnPage(page)
+                        _state.update { it.copy(imageVersion = System.currentTimeMillis()) }
+                        withContext(Dispatchers.Main) { onResult(detection.suggestedCorrectionDegrees) }
+                        return@launch
+                    }
+                }
+                withContext(Dispatchers.Main) { onResult(0) }
+            } catch (e: Exception) {
+                _state.update { it.copy(ocrError = "Auto-rotate failed: ${e.message}") }
+                withContext(Dispatchers.Main) { onResult(0) }
+            } finally {
+                _state.update { it.copy(isOcrRunning = false, ocrProgressText = "") }
+            }
+        }
+    }
+
+    /**
+     * Auto-rotates every page in the document if needed and rebuilds the PDF.
+     * Invokes [onComplete] with count of pages rotated.
+     */
+    fun autoRotateAllPages(onComplete: (Int) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _state.update { it.copy(isOcrRunning = true, ocrProgressText = "Auto-rotating pages...") }
+            var rotatedCount = 0
+            val pages = _state.value.pages
+            try {
+                for (page in pages) {
+                    val bitmap = fileStorageService.decodeSampledBitmap(page.imagePath, 2048, 2048) ?: continue
+                    val detection = ocrService.detectPageOrientation(bitmap, preferences.settings.value.ocrLanguage)
+                    bitmap.recycle()
+
+                    if (detection.needsRotation) {
+                        val deg = detection.suggestedCorrectionDegrees.toFloat()
+                        if (fileStorageService.rotateImageFile(page.imagePath, deg)) {
+                            if (page.originalImagePath.isNotBlank() && page.originalImagePath != page.imagePath) {
+                                fileStorageService.rotateImageFile(page.originalImagePath, deg)
+                            }
+                            rotatedCount++
+                        }
+                    }
+                }
+
+                if (rotatedCount > 0) {
+                    // Update cover thumbnail
+                    pages.firstOrNull()?.let { firstPage ->
+                        fileStorageService.loadBitmap(firstPage.imagePath)?.let { bmp ->
+                            fileStorageService.saveThumbnail(bmp, documentId)
+                            bmp.recycle()
+                        }
+                    }
+                    rerunOcrAll()
+                    _state.update { it.copy(imageVersion = System.currentTimeMillis()) }
+                }
+                withContext(Dispatchers.Main) { onComplete(rotatedCount) }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { onComplete(rotatedCount) }
+            } finally {
+                _state.update { it.copy(isOcrRunning = false, ocrProgressText = "") }
+            }
+        }
     }
 
     /**

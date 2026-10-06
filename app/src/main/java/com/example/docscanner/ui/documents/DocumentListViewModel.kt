@@ -14,6 +14,8 @@ import com.example.docscanner.data.repository.DocumentRepository
 import com.example.docscanner.service.FileStorageService
 import com.example.docscanner.service.PageData
 import com.example.docscanner.service.PdfGenerator
+import com.example.docscanner.service.MergeSuggestion
+import com.example.docscanner.service.SmartMergeDetector
 import com.example.docscanner.BuildConfig
 import com.example.docscanner.model.AppUpdateInfo
 import com.example.docscanner.model.ScannerResult
@@ -207,6 +209,27 @@ private data class DocumentFilter(
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
+
+    private val _dismissedMergeSuggestionIds = MutableStateFlow<Set<String>>(emptySet())
+
+    val smartMergeSuggestions: StateFlow<List<MergeSuggestion>> = combine(
+        repository.getAllDocuments(),
+        _dismissedMergeSuggestionIds
+    ) { allDocs, dismissedIds ->
+        SmartMergeDetector.findMergeSuggestions(allDocs)
+            .filter { it.id !in dismissedIds }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun dismissMergeSuggestion(suggestionId: String) {
+        _dismissedMergeSuggestionIds.update { it + suggestionId }
+    }
+
+    fun applyMergeSuggestion(suggestion: MergeSuggestion, onComplete: (String) -> Unit) {
+        val docIds = suggestion.allDocuments.map { it.id }.toSet()
+        _selectedDocIds.value = docIds
+        mergeSelectedDocuments(suggestion.allDocuments, onComplete)
+        dismissMergeSuggestion(suggestion.id)
+    }
 
     fun setCategory(category: DocumentCategory) {
         _selectedCategory.update { category }
