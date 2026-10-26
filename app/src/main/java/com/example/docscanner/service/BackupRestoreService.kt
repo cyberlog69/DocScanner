@@ -191,8 +191,12 @@ class BackupRestoreService(
             // Unpack ZIP
             ZipInputStream(BufferedInputStream(inputStream)).use { zis ->
                 var entry: ZipEntry? = zis.nextEntry
+                val canonicalTarget = tempDir.canonicalPath + File.separator
                 while (entry != null) {
                     val destFile = File(tempDir, entry.name)
+                    if (!destFile.canonicalPath.startsWith(canonicalTarget)) {
+                        throw SecurityException("Zip entry is outside of target directory: ${entry.name}")
+                    }
                     if (entry.isDirectory) {
                         destFile.mkdirs()
                     } else {
