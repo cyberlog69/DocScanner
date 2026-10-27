@@ -2,11 +2,17 @@ package com.example.docscanner.service
 
 import android.content.Context
 import android.os.Build
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import java.security.KeyStore
 import java.util.concurrent.atomic.AtomicBoolean
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
 
 /**
  * Result status of biometric hardware / credential enrollment on the device.
@@ -84,6 +90,37 @@ class BiometricAuthManager(private val context: Context) {
      * Prompts the user to authenticate using Fingerprint, Face ID, or Device PIN/Pattern.
      * Prevents duplicate dialogs via atomic state tracking.
      */
+    private val keyStoreAlias = "DocScannerBiometricKey"
+    private val androidKeyStore = "AndroidKeyStore"
+    private val transformation =
+        "${KeyProperties.KEY_ALGORITHM_AES}/${KeyProperties.BLOCK_MODE_CBC}/${KeyProperties.ENCRYPTION_PADDING_PKCS7}"
+
+    private fun getOrCreateSecretKey(): SecretKey {
+        val keyStore = KeyStore.getInstance(androidKeyStore).apply { load(null) }
+        val existingKey = keyStore.getKey(keyStoreAlias, null) as? SecretKey
+        if (existingKey != null) return existingKey
+
+        val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, androidKeyStore)
+        val keySpec = KeyGenParameterSpec.Builder(
+            keyStoreAlias,
+            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+        )
+            .setBlockModes(KeyProperties.BLOCK_MODE_CBC)
+            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_PKCS7)
+            .setUserAuthenticationRequired(true)
+            .setInvalidatedByBiometricEnrollment(true)
+            .build()
+
+        keyGenerator.init(keySpec)
+        return keyGenerator.generateKey()
+    }
+
+    private fun createCryptoObject(): BiometricPrompt.CryptoObject {
+        val cipher = Cipher.getInstance(transformation)
+        cipher.init(Cipher.ENCRYPT_MODE, getOrCreateSecretKey())
+        return BiometricPrompt.CryptoObject(cipher)
+    }
+
     fun authenticate(
         activity: FragmentActivity,
         title: String = "Unlock DocScanner",
@@ -106,7 +143,19 @@ class BiometricAuthManager(private val context: Context) {
             override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                 super.onAuthenticationSucceeded(result)
                 isPromptActive.set(false)
-                onResult(BiometricAuthResult.Success)
+
+                val cipher = result.cryptoObject?.cipher
+                if (cipher == null) {
+                    onResult(BiometricAuthResult.Error(-3, "Missing cryptographic authentication result"))
+                    return
+                }
+
+                try {
+                    cipher.doFinal("DocScannerAuth".toByteArray())
+                    onResult(BiometricAuthResult.Success)
+                } catch (e: Exception) {
+                    onResult(BiometricAuthResult.Error(-4, e.localizedMessage ?: "Cryptographic verification failed"))
+                }
             }
 
             override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
@@ -154,8 +203,9 @@ class BiometricAuthManager(private val context: Context) {
         }
 
         try {
+            val cryptoObject = createCryptoObject()
             isPromptActive.set(true)
-            biometricPrompt.authenticate(promptInfoBuilder.build())
+            biometricPrompt.authenticate(promptInfoBuilder.build(), cryptoObject)
         } catch (e: Exception) {
             isPromptActive.set(false)
             // Fallback to biometric-only with explicit cancel button if device credential failed
@@ -167,8 +217,9 @@ class BiometricAuthManager(private val context: Context) {
                     .setNegativeButtonText("Cancel")
                     .build()
 
+                val fallbackCryptoObject = createCryptoObject()
                 isPromptActive.set(true)
-                biometricPrompt.authenticate(fallbackPrompt)
+                biometricPrompt.authenticate(fallbackPrompt, fallbackCryptoObject)
             } catch (fallbackError: Exception) {
                 isPromptActive.set(false)
                 onResult(BiometricAuthResult.Error(-2, fallbackError.localizedMessage ?: "Failed to launch authentication"))
