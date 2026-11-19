@@ -13,6 +13,8 @@ interface DocumentDao {
     fun getDocumentsByCategory(category: DocumentCategory): Flow<List<Document>>
     fun searchDocuments(query: String): Flow<List<Document>>
     suspend fun getDocumentById(id: String): Document?
+    suspend fun getAllDocumentsSync(): List<Document>
+    suspend fun getVaultDocumentsSync(): List<Document>
     suspend fun renameDocument(id: String, title: String, now: Long = System.currentTimeMillis())
     suspend fun updateCategory(id: String, category: DocumentCategory, now: Long = System.currentTimeMillis())
     suspend fun togglePin(id: String, isPinned: Boolean, now: Long = System.currentTimeMillis())

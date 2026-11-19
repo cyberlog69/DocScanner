@@ -1,7 +1,6 @@
 package com.example.docscanner.data.db
 
 import android.database.sqlite.SQLiteDatabase
-import android.util.Log
 import com.example.docscanner.data.model.DocumentCategory
 
 /**
@@ -92,23 +91,8 @@ object Migration2To3 : DatabaseMigration {
     override val toVersion = 3
 
     override fun migrate(db: SQLiteDatabase) {
-        try {
-            val cursor = db.rawQuery("PRAGMA table_info(${AppDatabase.TABLE_DOCUMENTS})", null)
-            var hasIsPinned = false
-            cursor.use { c ->
-                val nameIdx = c.getColumnIndex("name")
-                while (c.moveToNext()) {
-                    if (nameIdx >= 0 && c.getString(nameIdx) == "isPinned") {
-                        hasIsPinned = true
-                        break
-                    }
-                }
-            }
-            if (!hasIsPinned) {
-                db.execSQL("ALTER TABLE ${AppDatabase.TABLE_DOCUMENTS} ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0")
-            }
-        } catch (e: Exception) {
-            Log.e("DatabaseMigration", "Error migrating database to v3 (isPinned column)", e)
+        if (!db.hasColumn(AppDatabase.TABLE_DOCUMENTS, "isPinned")) {
+            db.execSQL("ALTER TABLE ${AppDatabase.TABLE_DOCUMENTS} ADD COLUMN isPinned INTEGER NOT NULL DEFAULT 0")
         }
     }
 }
@@ -122,36 +106,21 @@ object Migration3To4 : DatabaseMigration {
     override val toVersion = 4
 
     override fun migrate(db: SQLiteDatabase) {
-        try {
-            val cursor = db.rawQuery("PRAGMA table_info(${AppDatabase.TABLE_DOCUMENTS})", null)
-            var hasTags = false
-            cursor.use { c ->
-                val nameIdx = c.getColumnIndex("name")
-                while (c.moveToNext()) {
-                    if (nameIdx >= 0 && c.getString(nameIdx) == "tags") {
-                        hasTags = true
-                        break
-                    }
-                }
-            }
-            if (!hasTags) {
-                db.execSQL("ALTER TABLE ${AppDatabase.TABLE_DOCUMENTS} ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
-            }
-            db.execSQL("DROP TABLE IF EXISTS ${AppDatabase.TABLE_DOCUMENTS_FTS}")
-            db.execSQL(
-                """
-                CREATE VIRTUAL TABLE IF NOT EXISTS ${AppDatabase.TABLE_DOCUMENTS_FTS} USING fts4(
-                    content="${AppDatabase.TABLE_DOCUMENTS}",
-                    title,
-                    extractedText,
-                    tags
-                )
-                """.trimIndent()
-            )
-            db.execSQL("INSERT INTO ${AppDatabase.TABLE_DOCUMENTS_FTS}(docid, title, extractedText, tags) SELECT rowid, title, extractedText, tags FROM ${AppDatabase.TABLE_DOCUMENTS}")
-        } catch (e: Exception) {
-            Log.e("DatabaseMigration", "Error migrating database to v4 (tags column and FTS update)", e)
+        if (!db.hasColumn(AppDatabase.TABLE_DOCUMENTS, "tags")) {
+            db.execSQL("ALTER TABLE ${AppDatabase.TABLE_DOCUMENTS} ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
         }
+        db.execSQL("DROP TABLE IF EXISTS ${AppDatabase.TABLE_DOCUMENTS_FTS}")
+        db.execSQL(
+            """
+            CREATE VIRTUAL TABLE IF NOT EXISTS ${AppDatabase.TABLE_DOCUMENTS_FTS} USING fts4(
+                content="${AppDatabase.TABLE_DOCUMENTS}",
+                title,
+                extractedText,
+                tags
+            )
+            """.trimIndent()
+        )
+        db.execSQL("INSERT INTO ${AppDatabase.TABLE_DOCUMENTS_FTS}(docid, title, extractedText, tags) SELECT rowid, title, extractedText, tags FROM ${AppDatabase.TABLE_DOCUMENTS}")
     }
 }
 
@@ -164,40 +133,34 @@ object Migration4To5 : DatabaseMigration {
     override val toVersion = 5
 
     override fun migrate(db: SQLiteDatabase) {
-        try {
-            val cursor = db.rawQuery("PRAGMA table_info(${AppDatabase.TABLE_DOCUMENTS})", null)
-            var hasIsVault = false
-            var hasFolderId = false
-            cursor.use { c ->
-                val nameIdx = c.getColumnIndex("name")
-                while (c.moveToNext()) {
-                    if (nameIdx >= 0) {
-                        val name = c.getString(nameIdx)
-                        if (name == "isVault") hasIsVault = true
-                        if (name == "folderId") hasFolderId = true
-                    }
-                }
-            }
-            if (!hasIsVault) {
-                db.execSQL("ALTER TABLE ${AppDatabase.TABLE_DOCUMENTS} ADD COLUMN isVault INTEGER NOT NULL DEFAULT 0")
-            }
-            if (!hasFolderId) {
-                db.execSQL("ALTER TABLE ${AppDatabase.TABLE_DOCUMENTS} ADD COLUMN folderId TEXT DEFAULT NULL")
-            }
-            db.execSQL(
-                """
-                CREATE TABLE IF NOT EXISTS ${AppDatabase.TABLE_FOLDERS} (
-                    id TEXT PRIMARY KEY NOT NULL,
-                    name TEXT NOT NULL,
-                    color INTEGER NOT NULL DEFAULT 0,
-                    createdAt INTEGER NOT NULL
-                )
-                """.trimIndent()
+        if (!db.hasColumn(AppDatabase.TABLE_DOCUMENTS, "isVault")) {
+            db.execSQL("ALTER TABLE ${AppDatabase.TABLE_DOCUMENTS} ADD COLUMN isVault INTEGER NOT NULL DEFAULT 0")
+        }
+        if (!db.hasColumn(AppDatabase.TABLE_DOCUMENTS, "folderId")) {
+            db.execSQL("ALTER TABLE ${AppDatabase.TABLE_DOCUMENTS} ADD COLUMN folderId TEXT DEFAULT NULL")
+        }
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS ${AppDatabase.TABLE_FOLDERS} (
+                id TEXT PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL,
+                color INTEGER NOT NULL DEFAULT 0,
+                createdAt INTEGER NOT NULL
             )
-        } catch (e: Exception) {
-            Log.e("DatabaseMigration", "Error migrating database to v5 (isVault, folderId, folders table)", e)
+            """.trimIndent()
+        )
+    }
+}
+
+private fun SQLiteDatabase.hasColumn(table: String, column: String): Boolean {
+    rawQuery("PRAGMA table_info($table)", null).use { cursor ->
+        val nameIdx = cursor.getColumnIndex("name")
+        if (nameIdx < 0) return false
+        while (cursor.moveToNext()) {
+            if (cursor.getString(nameIdx) == column) return true
         }
     }
+    return false
 }
 
 /**

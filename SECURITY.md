@@ -2,20 +2,37 @@
 
 ## Supported Versions
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
+DocScanner is distributed as a standalone app; only the latest published release
+receives security fixes.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+| Version | Supported |
+| ------- | --------- |
+| 1.9.x   | :white_check_mark: |
+| < 1.9   | :x: |
 
 ## Reporting a Vulnerability
 
-Use this section to tell people how to report a vulnerability.
+Please **do not open a public issue** for security problems.
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+Use GitHub's private vulnerability reporting:
+[Report a vulnerability](https://github.com/cyberlog69/DocScanner/security/advisories/new)
+
+Include:
+
+- Affected version (visible in Settings → About)
+- Android version and device model
+- Steps to reproduce, and any proof-of-concept files
+- Whether the issue affects the encrypted vault, backup/restore, or the
+  update mechanism
+
+You can expect an acknowledgement within 7 days and a status update within
+30 days. If the report is accepted, a fix is shipped in the next release and
+you are credited in the release notes unless you prefer otherwise.
+
+## Scope
+
+In scope: on-device data handling, the AES-256 GCM vault implementation,
+backup/restore archive handling, the in-app updater, and exported PDFs.
+
+Out of scope: issues that require a rooted device or physical access to an
+unlocked device, and third-party services (GitHub Releases) outside this repo.

@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import androidx.core.content.FileProvider
 import com.example.docscanner.model.AppUpdateInfo
 import com.example.docscanner.model.ScannerResult
@@ -62,6 +63,7 @@ class AppUpdateService(private val context: Context) {
 
             var downloadUrl: String? = null
             var apkSizeBytes = 0L
+            var apkDigest: String? = null
 
             val assets = json.optJSONArray("assets")
             if (assets != null) {
@@ -71,6 +73,7 @@ class AppUpdateService(private val context: Context) {
                     if (name.endsWith(".apk", ignoreCase = true)) {
                         downloadUrl = asset.optString("browser_download_url")
                         apkSizeBytes = asset.optLong("size", 0L)
+                        apkDigest = asset.optString("digest", "").takeIf { it.isNotBlank() }
                         break
                     }
                 }
@@ -86,7 +89,8 @@ class AppUpdateService(private val context: Context) {
                 downloadUrl = downloadUrl,
                 releasePageUrl = htmlUrl,
                 publishedAt = publishedAt,
-                apkSizeBytes = apkSizeBytes
+                apkSizeBytes = apkSizeBytes,
+                apkDigest = apkDigest
             )
 
             ScannerResult.Success(updateInfo)
@@ -99,9 +103,12 @@ class AppUpdateService(private val context: Context) {
 
     /**
      * Downloads the APK binary from GitHub asset URL into cache, reporting progress in real-time.
+     * When [expectedDigest] is provided (GitHub's `digest` asset field, e.g. `sha256:...`),
+     * the downloaded bytes are verified before the file is handed to the installer.
      */
     suspend fun downloadApk(
         downloadUrl: String,
+        expectedDigest: String? = null,
         onProgress: (progress: Float, downloadedBytes: Long, totalBytes: Long) -> Unit
     ): ScannerResult<File> = withContext(Dispatchers.IO) {
         var connection: HttpURLConnection? = null
@@ -135,6 +142,13 @@ class AppUpdateService(private val context: Context) {
                 }
             }
 
+            if (expectedDigest != null && !verifyDigest(apkFile, expectedDigest)) {
+                apkFile.delete()
+                return@withContext ScannerResult.Failure.GeneralError(
+                    "Update verification failed: downloaded file does not match the published checksum"
+                )
+            }
+
             ScannerResult.Success(apkFile)
         } catch (e: Exception) {
             ScannerResult.Failure.StorageError("Failed to download APK update: ${e.localizedMessage ?: e.message}")
@@ -146,8 +160,7 @@ class AppUpdateService(private val context: Context) {
     /**
      * Prompts the native Android package installer to install the downloaded APK.
      */
-    fun installApk(context: Context, apkFile: File) {
-        if (!apkFile.exists()) return
+    fun installApk(context: Context, apkFile: File) {        if (!apkFile.exists()) return
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (!context.packageManager.canRequestPackageInstalls()) {
@@ -172,5 +185,34 @@ class AppUpdateService(private val context: Context) {
         }
 
         context.startActivity(installIntent)
+    }
+
+    /**
+     * Verifies a file against GitHub's digest format (`<algorithm>:<hex>`).
+     */
+    private fun verifyDigest(file: File, expectedDigest: String): Boolean {
+        return try {
+            val separator = expectedDigest.indexOf(':')
+            val rawAlgorithm = if (separator > 0) expectedDigest.substring(0, separator) else "sha256"
+            val expectedHex = expectedDigest.substring(separator + 1).trim().lowercase()
+            val algorithm = when (rawAlgorithm.lowercase()) {
+                "sha512" -> "SHA-512"
+                else -> "SHA-256"
+            }
+            val digest = java.security.MessageDigest.getInstance(algorithm)
+            file.inputStream().use { input ->
+                val buffer = ByteArray(8192)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read <= 0) break
+                    digest.update(buffer, 0, read)
+                }
+            }
+            val actualHex = digest.digest().joinToString("") { byte -> "%02x".format(byte.toInt() and 0xFF) }
+            actualHex == expectedHex
+        } catch (e: Exception) {
+            Log.e("AppUpdateService", "Checksum verification failed", e)
+            false
+        }
     }
 }

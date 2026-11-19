@@ -22,8 +22,8 @@ val appModule = module {
     // Database & Storage
     single { AppDatabase(get()) }
     single<DocumentDao> { get<AppDatabase>().documentDao }
-    single<IDocumentRepository> { DocumentRepository(get()) }
     single { DocumentRepository(get()) }
+    single<IDocumentRepository> { get<DocumentRepository>() }
     single { ScannerPreferences(get()) }
     single { FileStorageService(get()) }
     single { DocumentScannerService(get()) }
@@ -32,11 +32,13 @@ val appModule = module {
     single { com.example.docscanner.service.AppUpdateService(get()) }
     single { com.example.docscanner.service.BiometricAuthManager(get()) }
     single { com.example.docscanner.service.AppSecurityManager(get(), get(), get()) }
+    single { com.example.docscanner.service.BackupRestoreService(get(), get(), get()) }
+    single { com.example.docscanner.service.VaultSessionService(get(), get()) }
 
     // ViewModels
-    viewModel { DocumentListViewModel(get(), get(), get(), get(), get()) }
+    viewModel { DocumentListViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { (documentId: String) ->
-        DocumentDetailViewModel(get(), get(), get(), get(), get(), documentId)
+        DocumentDetailViewModel(get(), get(), get(), get(), get(), get(), documentId)
     }
     viewModel { ScanViewModel(get(), get(), get(), get(), get(), get()) }
 }

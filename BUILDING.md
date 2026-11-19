@@ -66,19 +66,42 @@ app/build/outputs/apk/debug/app-debug.apk
 
 ### 2. Build Release APK
 
+Release builds need a signing key. Provide it either through a
+`keystore.properties` file at the repository root (git-ignored, see
+`keystore.properties.example`) or through environment variables:
+
+| Property | Environment variable |
+|---|---|
+| `storeFile` | `DOCSCANNER_KEYSTORE` |
+| `storePassword` | `DOCSCANNER_STORE_PASSWORD` |
+| `keyAlias` | `DOCSCANNER_KEY_ALIAS` |
+| `keyPassword` | `DOCSCANNER_KEY_PASSWORD` |
+
+Without those values the release build still runs but produces an **unsigned**
+APK, which is what CI does for verification builds.
+
+> **Key rotation required**: an earlier release keystore was committed to this
+> repository and must be treated as compromised. Generate a new key with
+> `scripts/generate-release-keystore.ps1` (Windows) or
+> `scripts/generate-release-keystore.sh` (macOS/Linux), store the keystore and
+> password outside the repo, and keep the old key only to sign migration builds
+> if you need to keep existing installs updatable. Users on the old key cannot
+> install a build signed with the new one without uninstalling first.
+
 - **Linux / macOS**:
   ```bash
-  ./gradlew assembleRelease
+  ./gradlew assembleGithubRelease
   ```
 
 - **Windows (PowerShell)**:
   ```powershell
-  .\gradlew.bat assembleRelease
+  .\gradlew.bat assembleGithubRelease
   ```
 
 **Output Artifact**:
 ```
-app/build/outputs/apk/release/app-release-unsigned.apk
+app/build/outputs/apk/github/release/app-github-release.apk        # signed
+app/build/outputs/apk/github/release/app-github-release-unsigned.apk  # unsigned
 ```
 
 ---
@@ -89,7 +112,7 @@ Execute the complete multiplatform and Android test suites:
 
 - **Linux / macOS**:
   ```bash
-  ./gradlew :shared:allTests :app:testDebugUnitTest
+  ./gradlew :shared:testAndroidHostTest :app:testGithubDebugUnitTest
   ```
 
 - **Windows (PowerShell)**:

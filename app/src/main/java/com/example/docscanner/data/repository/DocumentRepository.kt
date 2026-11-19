@@ -95,6 +95,10 @@ class DocumentRepository(
     }
 
     suspend fun getAllFoldersSync(): List<com.example.docscanner.model.Folder> = documentDao.getAllFoldersSync()
+
+    suspend fun getAllDocumentsSync(): List<Document> = documentDao.getAllDocumentsSync()
+
+    suspend fun getVaultDocumentsSync(): List<Document> = documentDao.getVaultDocumentsSync()
     suspend fun updateFolder(folder: com.example.docscanner.model.Folder): ScannerResult<Unit> = safeDbCall {
         documentDao.updateFolder(folder)
     }

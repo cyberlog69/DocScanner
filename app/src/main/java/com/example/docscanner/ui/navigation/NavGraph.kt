@@ -6,17 +6,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.example.docscanner.AppContainer
+import com.example.docscanner.data.pref.ScannerPreferences
+import com.example.docscanner.service.BackupRestoreService
+import com.example.docscanner.service.BiometricAuthManager
+import com.example.docscanner.service.DocumentScannerService
 import com.example.docscanner.ui.camera.ProcessingScreen
 import com.example.docscanner.ui.camera.ScanViewModel
 import com.example.docscanner.ui.camera.ScannerLaunchScreen
@@ -24,6 +24,9 @@ import com.example.docscanner.ui.documents.DocumentDetailScreen
 import com.example.docscanner.ui.documents.DocumentDetailViewModel
 import com.example.docscanner.ui.documents.DocumentListScreen
 import com.example.docscanner.ui.documents.DocumentListViewModel
+import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
+import org.koin.core.parameter.parametersOf
 
 sealed class Screen(val route: String) {
     data object DocumentList : Screen("document_list")
@@ -45,7 +48,6 @@ sealed class Screen(val route: String) {
 
 @Composable
 fun DocScannerNavHost(
-    appContainer: AppContainer,
     navController: NavHostController = rememberNavController(),
     modifier: Modifier = Modifier
 ) {
@@ -55,35 +57,12 @@ fun DocScannerNavHost(
         modifier = modifier
     ) {
         composable(Screen.DocumentList.route) {
-            val listViewModel: DocumentListViewModel = viewModel(
-                factory = object : ViewModelProvider.Factory {
-                    @Suppress("UNCHECKED_CAST")
-                    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                        return DocumentListViewModel(
-                            repository = appContainer.repository,
-                            fileStorageService = appContainer.fileStorageService,
-                            pdfGenerator = appContainer.pdfGenerator,
-                            preferences = appContainer.preferences,
-                            appUpdateService = appContainer.appUpdateService
-                        ) as T
-                    }
-                }
-            )
-            val scanViewModel: ScanViewModel = viewModel(
-                factory = object : ViewModelProvider.Factory {
-                    @Suppress("UNCHECKED_CAST")
-                    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                        return ScanViewModel(
-                            repository = appContainer.repository,
-                            ocrService = appContainer.ocrService,
-                            fileStorageService = appContainer.fileStorageService,
-                            pdfGenerator = appContainer.pdfGenerator,
-                            preferences = appContainer.preferences,
-                            context = appContainer.context
-                        ) as T
-                    }
-                }
-            )
+            val listViewModel: DocumentListViewModel = koinViewModel()
+            val scanViewModel: ScanViewModel = koinViewModel()
+            val preferences: ScannerPreferences = koinInject()
+            val backupRestoreService: BackupRestoreService = koinInject()
+            val biometricAuthManager: BiometricAuthManager = koinInject()
+
             val scanState by scanViewModel.state.collectAsStateWithLifecycle()
 
             LaunchedEffect(scanState.savedDocumentId) {
@@ -105,9 +84,9 @@ fun DocScannerNavHost(
                         scanViewModel.onScanComplete(uris)
                     },
                     viewModel = listViewModel,
-                    preferences = appContainer.preferences,
-                    backupRestoreService = appContainer.backupRestoreService,
-                    biometricAuthManager = appContainer.biometricAuthManager,
+                    preferences = preferences,
+                    backupRestoreService = backupRestoreService,
+                    biometricAuthManager = biometricAuthManager,
                     onProcessIdCard = { front, back ->
                         scanViewModel.processIdCard(front, back)
                     }
@@ -130,23 +109,11 @@ fun DocScannerNavHost(
             )
         ) { backStackEntry ->
             val existingDocId = backStackEntry.arguments?.getString("documentId")
-            val scanViewModel: ScanViewModel = viewModel(
-                factory = object : ViewModelProvider.Factory {
-                    @Suppress("UNCHECKED_CAST")
-                    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                        return ScanViewModel(
-                            repository = appContainer.repository,
-                            ocrService = appContainer.ocrService,
-                            fileStorageService = appContainer.fileStorageService,
-                            pdfGenerator = appContainer.pdfGenerator,
-                            preferences = appContainer.preferences,
-                            context = appContainer.context
-                        ) as T
-                    }
-                }
-            )
+            val scanViewModel: ScanViewModel = koinViewModel()
+            val documentScannerService: DocumentScannerService = koinInject()
+
             ScannerLaunchScreen(
-                scannerService = appContainer.documentScannerService,
+                scannerService = documentScannerService,
                 onScanComplete = { documentId ->
                     navController.navigate(Screen.DocumentDetail.createRoute(documentId, rename = existingDocId == null)) {
                         popUpTo(Screen.DocumentList.route)
@@ -178,16 +145,10 @@ fun DocScannerNavHost(
             val documentId = backStackEntry.arguments?.getString("documentId") ?: ""
             val searchQuery = backStackEntry.arguments?.getString("query").orEmpty()
             val autoRename = backStackEntry.arguments?.getBoolean("rename") ?: false
-            val detailViewModel: DocumentDetailViewModel = viewModel(
-                factory = DocumentDetailViewModel.provideFactory(
-                    repository = appContainer.repository,
-                    fileStorageService = appContainer.fileStorageService,
-                    pdfGenerator = appContainer.pdfGenerator,
-                    ocrService = appContainer.ocrService,
-                    preferences = appContainer.preferences,
-                    documentId = documentId
-                )
-            )
+            val detailViewModel: DocumentDetailViewModel = koinViewModel {
+                parametersOf(documentId)
+            }
+
             DocumentDetailScreen(
                 onNavigateBack = { navController.popBackStack() },
                 searchQuery = searchQuery,

@@ -16,6 +16,7 @@ import com.example.docscanner.service.PageData
 import com.example.docscanner.service.PdfGenerator
 import com.example.docscanner.service.MergeSuggestion
 import com.example.docscanner.service.SmartMergeDetector
+import com.example.docscanner.service.VaultSessionService
 import com.example.docscanner.BuildConfig
 import com.example.docscanner.model.AppUpdateInfo
 import com.example.docscanner.model.ScannerResult
@@ -56,7 +57,8 @@ class DocumentListViewModel(
     private val fileStorageService: FileStorageService,
     private val pdfGenerator: PdfGenerator,
     private val preferences: ScannerPreferences,
-    private val appUpdateService: AppUpdateService
+    private val appUpdateService: AppUpdateService,
+    private val vaultSession: VaultSessionService
 ) : ViewModel() {
 
     private val _updateCheckState = MutableStateFlow<UpdateCheckState>(UpdateCheckState.Idle)
@@ -71,6 +73,13 @@ class DocumentListViewModel(
     init {
         if (BuildConfig.ENABLE_GITHUB_UPDATER && preferences.settings.value.autoCheckUpdates) {
             checkForUpdates(BuildConfig.VERSION_NAME, isManual = false)
+        }
+        viewModelScope.launch {
+            vaultSession.isUnlocked.collect { unlocked ->
+                if (!unlocked && _isVaultMode.value) {
+                    _isVaultMode.value = false
+                }
+            }
         }
     }
 
@@ -112,7 +121,7 @@ class DocumentListViewModel(
         val downloadUrl = appUpdateInfo.downloadUrl ?: return
         viewModelScope.launch {
             _downloadProgress.value = 0f
-            when (val result = appUpdateService.downloadApk(downloadUrl) { progress, _, _ ->
+            when (val result = appUpdateService.downloadApk(downloadUrl, appUpdateInfo.apkDigest) { progress, _, _ ->
                 _downloadProgress.value = progress
             }) {
                 is ScannerResult.Success -> {
@@ -154,6 +163,9 @@ private data class DocumentFilter(
 
     private val _isVaultMode = MutableStateFlow(false)
     val isVaultMode: StateFlow<Boolean> = _isVaultMode.asStateFlow()
+
+    private val _vaultMessage = MutableStateFlow<String?>(null)
+    val vaultMessage: StateFlow<String?> = _vaultMessage.asStateFlow()
 
     val folders: StateFlow<List<Folder>> = repository.getAllFolders()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -251,10 +263,23 @@ private data class DocumentFilter(
     }
 
     fun setVaultMode(enabled: Boolean) {
-        _isVaultMode.value = enabled
-        if (enabled) {
-            _selectedFolderId.value = null
+        viewModelScope.launch {
+            if (enabled) {
+                _selectedFolderId.value = null
+                val allDecrypted = vaultSession.unlock()
+                _isVaultMode.value = true
+                if (!allDecrypted) {
+                    _vaultMessage.value = "Some vault files could not be decrypted on this device."
+                }
+            } else {
+                _isVaultMode.value = false
+                vaultSession.lock()
+            }
         }
+    }
+
+    fun clearVaultMessage() {
+        _vaultMessage.value = null
     }
 
     fun createFolder(name: String, color: Int = 0) {

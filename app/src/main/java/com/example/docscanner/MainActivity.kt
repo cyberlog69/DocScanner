@@ -44,12 +44,21 @@ import androidx.compose.ui.unit.dp
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.docscanner.data.pref.ScannerPreferences
+import com.example.docscanner.service.AppSecurityManager
+import com.example.docscanner.service.BiometricAuthManager
 import com.example.docscanner.service.BiometricAuthResult
 import com.example.docscanner.service.BiometricStatus
 import com.example.docscanner.ui.navigation.DocScannerNavHost
 import com.example.docscanner.ui.theme.DocScannerTheme
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 
-class MainActivity : FragmentActivity() {
+class MainActivity : FragmentActivity(), KoinComponent {
+
+    private val securityManager: AppSecurityManager by inject()
+    private val biometricAuthManager: BiometricAuthManager by inject()
+    private val preferences: ScannerPreferences by inject()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
@@ -57,12 +66,8 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        val app = application as DocScannerApp
-        val securityManager = app.container.appSecurityManager
-        val biometricAuthManager = app.container.biometricAuthManager
-
         setContent {
-            val settings by app.container.preferences.settings.collectAsStateWithLifecycle()
+            val settings by preferences.settings.collectAsStateWithLifecycle()
             val isUnlocked by securityManager.isUnlocked.collectAsStateWithLifecycle()
             val requiresAuth = settings.isBiometricLockEnabled && !isUnlocked
 
@@ -124,12 +129,12 @@ class MainActivity : FragmentActivity() {
                                 }
                             },
                             onDisableLock = {
-                                app.container.preferences.setBiometricLockEnabled(false)
+                                preferences.setBiometricLockEnabled(false)
                                 securityManager.unlock()
                             }
                         )
                     } else {
-                        DocScannerNavHost(appContainer = app.container)
+                        DocScannerNavHost()
                     }
                 }
             }

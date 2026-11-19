@@ -381,6 +381,7 @@ fun DocumentDetailScreen(
                                 showMenu = false
                                 viewModel.toggleVault { inVault ->
                                     Toast.makeText(context, if (inVault) "Encrypted & moved to Vault 🔒" else "Restored from Vault 🔓", Toast.LENGTH_SHORT).show()
+                                    if (inVault) onNavigateBack()
                                 }
                             }
                         )

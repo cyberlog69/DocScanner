@@ -1,7 +1,6 @@
 package com.example.docscanner.ui.documents
 
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -31,7 +30,7 @@ import com.example.docscanner.service.SignatureService
 import com.example.docscanner.service.StampConfig
 import com.example.docscanner.service.TableExtractionResult
 import com.example.docscanner.service.TableExtractor
-import com.example.docscanner.service.VaultEncryptionService
+import com.example.docscanner.service.VaultSessionService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -48,6 +47,7 @@ class DocumentDetailViewModel(
     private val pdfGenerator: PdfGenerator,
     private val ocrService: OcrService,
     private val preferences: ScannerPreferences,
+    private val vaultSession: VaultSessionService,
     private val documentId: String
 ) : ViewModel() {
 
@@ -239,7 +239,8 @@ class DocumentDetailViewModel(
             try {
                 val result = ocrService.recognizeTextFromFile(
                     File(page.imagePath),
-                    preferences.settings.value.ocrLanguage
+                    preferences.settings.value.ocrLanguage,
+                    preferences.settings.value.ocrRecognitionMode
                 )
                 val updatedPage = page.copy(extractedText = result.fullText)
                 repository.savePage(updatedPage)
@@ -260,8 +261,9 @@ class DocumentDetailViewModel(
             _state.update { it.copy(isOcrRunning = true, ocrProgressText = "Running OCR on ${_state.value.pages.size} pages...") }
             try {
                 val language = preferences.settings.value.ocrLanguage
+                val mode = preferences.settings.value.ocrRecognitionMode
                 val updatedPages = _state.value.pages.map { page ->
-                    val result = ocrService.recognizeTextFromFile(File(page.imagePath), language)
+                    val result = ocrService.recognizeTextFromFile(File(page.imagePath), language, mode)
                     page.copy(extractedText = result.fullText)
                 }
                 repository.savePages(updatedPages)
@@ -386,7 +388,11 @@ class DocumentDetailViewModel(
 
                 // Re-run OCR on the newly cropped page
                 _state.update { it.copy(ocrProgressText = "Updating OCR text for cropped page...") }
-                val ocrResult = ocrService.recognizeText(croppedBitmap, preferences.settings.value.ocrLanguage)
+                val ocrResult = ocrService.recognizeText(
+                    croppedBitmap,
+                    preferences.settings.value.ocrLanguage,
+                    preferences.settings.value.ocrRecognitionMode
+                )
                 val updatedPage = page.copy(
                     extractedText = ocrResult.fullText,
                     width = croppedBitmap.width,
@@ -700,7 +706,7 @@ class DocumentDetailViewModel(
 
                 val newOcrResults = if (settings.autoOcr) {
                     _state.update { it.copy(ocrProgressText = "Running OCR on ${bitmaps.size} new pages...") }
-                    bitmaps.map { ocrService.recognizeText(it, settings.ocrLanguage) }
+                    bitmaps.map { ocrService.recognizeText(it, settings.ocrLanguage, settings.ocrRecognitionMode) }
                 } else {
                     emptyList()
                 }
@@ -752,47 +758,25 @@ class DocumentDetailViewModel(
     fun toggleVault(onComplete: (Boolean) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             val doc = _state.value.document ?: return@launch
-            val newVaultStatus = !doc.isVault
             val pages = _state.value.pages
+            val moveIntoVault = !doc.isVault
 
-            try {
-                if (newVaultStatus) {
-                    // Encrypt page images and PDF
-                    for (page in pages) {
-                        File(page.imagePath).takeIf { it.exists() }?.let { VaultEncryptionService.encryptFile(it) }
-                        if (page.originalImagePath.isNotBlank() && page.originalImagePath != page.imagePath) {
-                            File(page.originalImagePath).takeIf { it.exists() }?.let { VaultEncryptionService.encryptFile(it) }
-                        }
-                    }
-                    if (doc.pdfPath.isNotBlank()) {
-                        File(doc.pdfPath).takeIf { it.exists() }?.let { VaultEncryptionService.encryptFile(it) }
-                    }
-                    if (doc.thumbnailPath.isNotBlank()) {
-                        File(doc.thumbnailPath).takeIf { it.exists() }?.let { VaultEncryptionService.encryptFile(it) }
-                    }
-                } else {
-                    // Decrypt page images and PDF back to plaintext
-                    for (page in pages) {
-                        File(page.imagePath).takeIf { it.exists() }?.let { VaultEncryptionService.decryptFileInPlace(it) }
-                        if (page.originalImagePath.isNotBlank() && page.originalImagePath != page.imagePath) {
-                            File(page.originalImagePath).takeIf { it.exists() }?.let { VaultEncryptionService.decryptFileInPlace(it) }
-                        }
-                    }
-                    if (doc.pdfPath.isNotBlank()) {
-                        File(doc.pdfPath).takeIf { it.exists() }?.let { VaultEncryptionService.decryptFileInPlace(it) }
-                    }
-                    if (doc.thumbnailPath.isNotBlank()) {
-                        File(doc.thumbnailPath).takeIf { it.exists() }?.let { VaultEncryptionService.decryptFileInPlace(it) }
-                    }
-                }
+            val moved = if (moveIntoVault) {
+                vaultSession.moveIntoVault(doc, pages)
+            } else {
+                vaultSession.moveOutOfVault(doc, pages)
+            }
 
-                repository.setVaultStatus(documentId, newVaultStatus)
-                loadDocument()
-                withContext(Dispatchers.Main) {
-                    onComplete(newVaultStatus)
+            if (!moved) {
+                _state.update {
+                    it.copy(exportError = "Vault ${if (moveIntoVault) "move" else "unlock"} failed; nothing was changed.")
                 }
-            } catch (e: Exception) {
-                _state.update { it.copy(exportError = "Vault toggle failed: ${e.message}") }
+                return@launch
+            }
+
+            loadDocument()
+            withContext(Dispatchers.Main) {
+                onComplete(moveIntoVault)
             }
         }
     }
@@ -962,29 +946,6 @@ class DocumentDetailViewModel(
             }
             withContext(Dispatchers.Main) {
                 onComplete(success)
-            }
-        }
-    }
-
-    companion object {
-        fun provideFactory(
-            repository: DocumentRepository,
-            fileStorageService: FileStorageService,
-            pdfGenerator: PdfGenerator,
-            ocrService: OcrService,
-            preferences: ScannerPreferences,
-            documentId: String
-        ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
-            @Suppress("UNCHECKED_CAST")
-            override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                return DocumentDetailViewModel(
-                    repository,
-                    fileStorageService,
-                    pdfGenerator,
-                    ocrService,
-                    preferences,
-                    documentId
-                ) as T
             }
         }
     }

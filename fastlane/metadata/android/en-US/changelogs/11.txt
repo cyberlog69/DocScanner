@@ -3,4 +3,4 @@
 - Smart Merge Suggestions: Automatically detect scans from the same session (<25m) with matching categories and merge them into one document in a single tap.
 - Auto-Rotate Correction: ML Kit baseline angle analysis and clustering detects sideways and upside-down pages and auto-rotates upright.
 - Hardware Keyboard Navigation: Dedicated keyboard shortcuts for tablets and external keyboards (Ctrl+N, Ctrl+F, Ctrl+R, Ctrl+P, Ctrl+S, Esc).
-- 100% Offline, Zero Network Requests, Zero Telemetry.
+- 100% Offline Processing: scans, OCR and PDF generation stay on your device. Zero telemetry, zero analytics.

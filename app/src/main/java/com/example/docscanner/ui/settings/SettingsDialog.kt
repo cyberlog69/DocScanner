@@ -118,7 +118,8 @@ fun SettingsDialog(
             isBackingUp = true
             scope.launch {
                 try {
-                    val backupZip = backupRestoreService.createBackupZip()
+                    val backup = backupRestoreService.createBackupZip()
+                    val backupZip = backup.file
                     val uri = FileProvider.getUriForFile(
                         context,
                         "${context.packageName}.fileprovider",
@@ -129,6 +130,12 @@ fun SettingsDialog(
                         putExtra(Intent.EXTRA_STREAM, uri)
                         putExtra(Intent.EXTRA_SUBJECT, backupZip.name)
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    restoreResultMessage = if (backup.excludedVaultCount > 0) {
+                        "Backup ready: ${backup.documentCount} document(s). " +
+                            "${backup.excludedVaultCount} vault document(s) excluded — their key never leaves this device."
+                    } else {
+                        "Backup ready: ${backup.documentCount} document(s)."
                     }
                     context.startActivity(Intent.createChooser(sendIntent, "Save or Share Backup ZIP"))
                 } catch (e: Exception) {
@@ -457,6 +464,62 @@ fun SettingsDialog(
                                         color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
+                            }
+                        }
+                    }
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Psychology,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Recognition Mode",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    com.example.docscanner.bridge.OcrRecognitionMode.entries.forEach { mode ->
+                        val isSelected = mode == settings.ocrRecognitionMode
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { preferences.setOcrRecognitionMode(mode) },
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isSelected) {
+                                    MaterialTheme.colorScheme.secondaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                                }
+                            ),
+                            border = if (isSelected) {
+                                BorderStroke(1.5.dp, MaterialTheme.colorScheme.secondary)
+                            } else null,
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                            ) {
+                                Text(
+                                    text = mode.displayName,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = mode.description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
                     }

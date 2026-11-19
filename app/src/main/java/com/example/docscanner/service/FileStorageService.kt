@@ -24,6 +24,10 @@ class FileStorageService(
     private val thumbnailsDir: File
         get() = File(context.filesDir, "thumbnails").also { it.mkdirs() }
 
+    /** Vault documents live outside `documents/` so they can be excluded from system transfer. */
+    private val vaultDir: File
+        get() = File(context.filesDir, "vault").also { it.mkdirs() }
+
     private val cacheDir: File
         get() = File(context.cacheDir, "scans").also { it.mkdirs() }
 
@@ -138,11 +142,21 @@ class FileStorageService(
         return File(cacheDir, "SCAN_${timestamp}_${UUID.randomUUID()}.jpg")
     }
 
-    /** Deletes all files for a document (images + PDF). */
+    /** Deletes all files for a document (images + PDF), whether stored in the library or the vault. */
     fun deleteDocumentFiles(documentId: String) {
         File(documentsDir, documentId).deleteRecursively()
+        File(vaultDir, documentId).deleteRecursively()
         File(thumbnailsDir, "${documentId}.jpg").delete()
     }
+
+    /** Directory holding a vault document's files (plaintext while the vault is unlocked). */
+    fun getVaultDocumentDir(documentId: String): File = File(vaultDir, documentId).also { it.mkdirs() }
+
+    /** Directory holding a non-vault document's files. */
+    fun getDocumentDir(documentId: String): File = File(documentsDir, documentId).also { it.mkdirs() }
+
+    /** Directory holding document thumbnails. */
+    fun thumbnailsDirectory(): File = thumbnailsDir
 
     /** Deletes a single page image file. */
     fun deletePageFile(imagePath: String): Boolean {
@@ -188,10 +202,14 @@ class FileStorageService(
     /** Gets the total storage size in bytes occupied by a specific document's files (images + PDF + thumbnail). */
     fun getDocumentStorageBytes(documentId: String): Long {
         val docDir = File(documentsDir, documentId)
+        val vaultDocDir = File(vaultDir, documentId)
         val thumb = File(thumbnailsDir, "${documentId}.jpg")
-        val docBytes = if (docDir.exists()) docDir.walkBottomUp().filter { it.isFile }.sumOf { it.length() } else 0L
-        val thumbBytes = if (thumb.exists()) thumb.length() else 0L
-        return docBytes + thumbBytes
+        val vaultThumb = File(vaultDocDir, "${documentId}.jpg")
+        fun sizeOf(dir: File): Long =
+            if (dir.exists()) dir.walkBottomUp().filter { it.isFile }.sumOf { it.length() } else 0L
+        return sizeOf(docDir) + sizeOf(vaultDocDir) +
+            (if (thumb.exists()) thumb.length() else 0L) +
+            (if (vaultThumb.exists() && vaultThumb != thumb) vaultThumb.length() else 0L)
     }
 
     /** Gets a content URI via FileProvider for sharing. */
@@ -203,15 +221,18 @@ class FileStorageService(
         )
     }
 
-    /** Returns the total storage used by the app in bytes (documents + thumbnails). */
+    /** Returns the total storage used by the app in bytes (documents + vault + thumbnails). */
     fun getTotalStorageUsed(): Long {
         val docsBytes = if (documentsDir.exists()) {
             documentsDir.walkBottomUp().filter { it.isFile }.sumOf { it.length() }
         } else 0L
+        val vaultBytes = if (vaultDir.exists()) {
+            vaultDir.walkBottomUp().filter { it.isFile }.sumOf { it.length() }
+        } else 0L
         val thumbsBytes = if (thumbnailsDir.exists()) {
             thumbnailsDir.walkBottomUp().filter { it.isFile }.sumOf { it.length() }
         } else 0L
-        return docsBytes + thumbsBytes
+        return docsBytes + vaultBytes + thumbsBytes
     }
 
     companion object {

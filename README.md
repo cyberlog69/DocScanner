@@ -8,7 +8,7 @@
 [![Privacy](https://img.shields.io/badge/Privacy-100%25%20Offline%20AI-brightgreen.svg)](PRIVACY_POLICY.md)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-**DocScanner** is a fast, modern, privacy-focused mobile application that transforms your device into an offline AI document scanning workstation. Built with **Kotlin Multiplatform (KMP)** and **Jetpack Compose / SwiftUI**, it provides **Android & iOS** support with 100% on-device AI OCR, automatic edge detection, smart auto-categorization, paper size diagnostics, Wi-Fi printing, and searchable PDF creation.
+**DocScanner** is a fast, modern, privacy-focused mobile application that transforms your device into an offline AI document scanning workstation. The Android app is built with **Jetpack Compose** and consumes the shared **Kotlin Multiplatform (KMP)** core that holds the domain models, parsers, and platform bridges. A lighter **SwiftUI** iOS app covers scanning, OCR, and PDF export; it does not yet consume the shared core and is not at feature parity. All OCR, categorization, PDF generation, and image processing run on-device — no cloud services are involved.
 
 <p align="center">
   <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1_id_card_mode.png" width="32%" alt="Dual-Sided ID Card Mode" />
@@ -35,8 +35,8 @@
 
 ### 🪪 Advanced Scanning & Document Management (v1.7.0)
 - 🪪 **Dual-Sided ID Card Mode**: Sequential front & back capture auto-composited symmetrically onto a standard A4 canvas (300 DPI, ID-1 ratio) with rounded frames, drop shadow, and header labels.
-- 🗄️ **100% Offline Backup & Restore (.zip)**: Export entire database records, page bitmaps, thumbnails, and PDFs into a portable ZIP archive. Restore on any device without internet.
-- 🔒 **Encrypted Document Vault**: Hardware-backed Android Keystore AES-256 GCM authenticated encryption at rest for sensitive documents, isolated from main list and FTS4 search with biometric unlock.
+- 🗄️ **100% Offline Backup & Restore (.zip)**: Export database records, page bitmaps, thumbnails, and PDFs into a portable ZIP archive and restore on any device without internet. Vault documents are excluded because their key never leaves the device.
+- 🔒 **Encrypted Document Vault**: Hardware-backed Android Keystore AES-256 GCM authenticated encryption at rest for sensitive documents, isolated from main list and FTS4 search. Files are decrypted only while the vault is open and re-encrypted when it closes or the app is backgrounded.
 - 🧾 **Smart Financial Data Extraction**: Pure local regex & heuristic parsing on OCR text extracting Merchant, Date, Total Amount, Tax/GST, and Invoice # with 1-tap copy actions.
 - 📝 **PDF Watermark Stamps & Annotations**: Stamp documents with customizable watermarks (APPROVED, CONFIDENTIAL, PAID, COPY, etc.) or custom banners with custom opacity via Apache PDFBox.
 - 🔄 **Add Pages to Existing Document**: Re-scan or import additional pages directly into any saved document, re-indexing pages and rebuilding the searchable PDF.
@@ -62,24 +62,30 @@
 
 ---
 
-## 🏛️ Multiplatform Architecture
+## 🏛️ Project Structure
 
 ```
 DocScanner
 ├── shared/                         # Kotlin Multiplatform Shared Core (KMP)
-│   ├── src/commonMain/             # Shared domain models, Result hierarchy, metrics, classifier & DI
+│   ├── src/commonMain/             # Domain models, parsers, Result hierarchy, metrics, classifier & DI
 │   │   └── kotlin/com/example/docscanner/
 │   │       ├── model/              # Document, Page, CategoryClassifier, SortOrder, DocumentMetrics, AppUpdateInfo, ScannerResult
+│   │       ├── service/            # ReceiptParser, BusinessCardParser, TableExtractor, DocumentSummarizer, SmartMergeDetector, AutoRotateDetector
 │   │       ├── repository/         # DocumentRepository interface abstraction
 │   │       ├── di/                 # SharedModule (Koin Multiplatform DI)
 │   │       └── bridge/             # expect class: PlatformOcrEngine, PlatformBiometrics, PlatformPdfGenerator, PlatformStorage
-│   ├── src/commonTest/             # Multiplatform Unit Test Suite (100% pass rate)
+│   ├── src/commonTest/             # Multiplatform unit tests for shared logic
 │   ├── src/androidMain/            # Android actual implementations (ML Kit, BiometricPrompt, Apache PDFBox)
-│   └── src/iosMain/                # iOS actual implementations (Apple VisionKit, Vision OCR, LocalAuth, PDFKit)
-├── app/                            # Android Application module (Jetpack Compose UI & Koin DI)
-├── iosApp/                         # iOS Application (SwiftUI host embedding KMP framework)
-└── .github/workflows/build.yml     # Automated multiplatform CI workflow compiling Android APK + iOS IPA
+│   └── src/iosMain/                # iOS actual implementations (Apple Vision, LocalAuth, PDFKit)
+├── app/                            # Android application (Jetpack Compose UI, database, PDF/vault/backup services)
+├── iosApp/                         # iOS application (SwiftUI)
+└── .github/workflows/              # CI: unit tests, Android APK, iOS framework/IPA, CodeQL
 ```
+
+**Platform status:** Android is the primary target and carries the full feature set
+(vault, backup/restore, PDF annotation, signatures, folders, tags, batch tools).
+The iOS app covers scanning, OCR, and PDF export, and is not yet at feature parity.
+See [ROADMAP.md](ROADMAP.md) for the parity work still outstanding.
 
 ---
 
@@ -96,7 +102,7 @@ DocScanner
 | **Printing** | Android Native `PrintManager` & `PrintDocumentAdapter` | iOS `UIPrintInteractionController` |
 | **File Sandbox** | Android Context `filesDir` & `FileProvider` | Apple Foundation `NSFileManager` Documents |
 | **Image Loading** | Coil Compose | UIKit `UIImage` / SwiftUI `AsyncImage` |
-| **UI Framework** | Jetpack Compose (Material 3) | SwiftUI & Compose Multiplatform |
+| **UI Framework** | Jetpack Compose (Material 3) | SwiftUI |
 
 ---
 
@@ -105,14 +111,14 @@ DocScanner
 Download pre-built packages from the [GitHub Releases](https://github.com/cyberlog69/DocScanner/releases) section:
 
 ### 🤖 Android (`.apk`)
-- **`DocScanner-Android-v1.6.0.apk`**: Full standalone package with bundled offline ML Kit models.
+- **`DocScanner-Android-v1.9.0.apk`**: Full standalone package with bundled offline ML Kit models.
 - **Install via ADB**:
   ```powershell
-  adb install -r DocScanner-Android-v1.6.0.apk
+  adb install -r DocScanner-Android-v1.9.0.apk
   ```
 
 ### 🍏 iOS (`.ipa` & Framework)
-- **`DocScanner-iOS-v1.6.0.ipa`**: Signed package ready for sideloading on physical iOS devices (iOS 16.0+) via **AltStore**, **Sideloadly**, or **Xcode Devices & Simulators**.
+- **`DocScanner-iOS-v1.9.0.ipa`**: Unsigned package ready for sideloading on physical iOS devices (iOS 16.0+) via **AltStore**, **Sideloadly**, or **Xcode Devices & Simulators**, which sign it on install.
 - **`DocScannerKit.framework`**: Compiled multiplatform binary framework for Xcode projects.
 
 ---
@@ -121,7 +127,9 @@ Download pre-built packages from the [GitHub Releases](https://github.com/cyberl
 
 DocScanner is designed from the ground up for strict offline privacy:
 - All document scanning, OCR text extraction, image processing, categorization, and PDF generation execute **100% locally on your device**.
-- Network access is strictly isolated to querying the public GitHub Releases API when the user explicitly taps "Check for Updates" or if automatic update checking is enabled in Settings.
+- No analytics, telemetry, crash reporting, or advertising SDKs are included.
+- Network access is limited to the GitHub Releases API for update checks. Automatic checking is **off by default** and can be enabled in Settings; manual checks only run when you tap "Check for Updates". No document content is ever transmitted.
+- Android cloud backup is disabled for scanned files, and vault contents are excluded from device-to-device transfer as well.
 
 ---
 

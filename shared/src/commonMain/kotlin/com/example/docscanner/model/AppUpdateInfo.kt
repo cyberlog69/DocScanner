@@ -11,7 +11,9 @@ data class AppUpdateInfo(
     val downloadUrl: String? = null,
     val releasePageUrl: String = "",
     val publishedAt: String = "",
-    val apkSizeBytes: Long = 0L
+    val apkSizeBytes: Long = 0L,
+    /** GitHub asset digest, e.g. "sha256:abc123...". Used to verify downloads. */
+    val apkDigest: String? = null
 ) {
     val formattedApkSize: String
         get() = if (apkSizeBytes > 0) {

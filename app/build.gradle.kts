@@ -1,7 +1,26 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
 }
+
+val keystoreProperties = Properties().apply {
+    val propertiesFile = rootProject.file("keystore.properties")
+    if (propertiesFile.exists()) {
+        propertiesFile.inputStream().use { load(it) }
+    }
+}
+
+fun signingValue(key: String, envVar: String): String? =
+    (keystoreProperties.getProperty(key) ?: System.getenv(envVar))?.takeIf { it.isNotBlank() }
+
+val releaseKeystoreFile = signingValue("storeFile", "DOCSCANNER_KEYSTORE")?.let { file(it) }
+val releaseStorePassword = signingValue("storePassword", "DOCSCANNER_STORE_PASSWORD")
+val releaseKeyAlias = signingValue("keyAlias", "DOCSCANNER_KEY_ALIAS")
+val releaseKeyPassword = signingValue("keyPassword", "DOCSCANNER_KEY_PASSWORD")
+val hasReleaseSigning = releaseKeystoreFile?.exists() == true &&
+    releaseStorePassword != null && releaseKeyAlias != null && releaseKeyPassword != null
 
 android {
     namespace = "com.example.docscanner"
@@ -30,11 +49,13 @@ android {
     }
 
     signingConfigs {
-        create("release") {
-            storeFile = file("docscanner-signing.keystore")
-            storePassword = "docscanner123"
-            keyAlias = "docscanner"
-            keyPassword = "docscanner123"
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = releaseKeystoreFile
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
         }
     }
 
@@ -46,10 +67,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("release")
+            // Unsigned when no keystore is configured; CI supplies one via secrets.
+            signingConfig = signingConfigs.findByName("release")
         }
         debug {
-            signingConfig = signingConfigs.getByName("release")
+            // Uses the standard debug keystore so debug builds never touch release keys.
         }
     }
     compileOptions {

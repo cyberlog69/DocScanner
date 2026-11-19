@@ -10,12 +10,18 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.security.KeyStore
 import javax.crypto.Cipher
+import javax.crypto.CipherInputStream
+import javax.crypto.CipherOutputStream
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /**
  * Provides hardware-backed AES-256 GCM encryption and decryption for Vault documents.
+ *
+ * File format: `[1-byte IV length][IV][ciphertext + auth tag]`.
+ * Encryption and in-place decryption stream through the cipher, so large PDFs are
+ * never fully buffered in memory.
  */
 object VaultEncryptionService {
 
@@ -24,6 +30,7 @@ object VaultEncryptionService {
     private const val TRANSFORMATION = "AES/GCM/NoPadding"
     private const val GCM_TAG_LENGTH = 128
     private const val IV_LENGTH = 12
+    private const val MAX_IV_LENGTH = 32
 
     init {
         ensureKeyExists()
@@ -57,50 +64,80 @@ object VaultEncryptionService {
     }
 
     /**
-     * Encrypts a file in place using AES-256 GCM.
-     * Output format: [1-byte IV length] + [IV bytes] + [Ciphertext + Auth Tag]
+     * Returns true when [file] starts with a plausible IV-length header.
+     *
+     * Page images are JPEG (0xFF), PDFs start with '%' (0x25) and PNGs with 0x89,
+     * all of which are outside the valid 1..32 IV-length range, so plaintext files
+     * are never mistaken for ciphertext.
+     */
+    fun isEncrypted(file: File): Boolean {
+        if (!file.exists() || file.length() <= IV_LENGTH + 1) return false
+        return try {
+            FileInputStream(file).use { fis ->
+                val header = fis.read()
+                header in 1..MAX_IV_LENGTH
+            }
+        } catch (e: Exception) {
+            Log.e("VaultEncryptionService", "Failed to inspect ${file.name}", e)
+            false
+        }
+    }
+
+    /**
+     * Encrypts a file in place using AES-256 GCM. The original is replaced only after
+     * the ciphertext is fully written.
      */
     fun encryptFile(file: File): Boolean {
         if (!file.exists() || file.length() == 0L) return false
+        val tempEncFile = File(file.parentFile, "${file.name}.tmp")
         return try {
-            val plaintext = file.readBytes()
             val cipher = Cipher.getInstance(TRANSFORMATION)
             cipher.init(Cipher.ENCRYPT_MODE, getSecretKey())
             val iv = cipher.iv
-            val ciphertext = cipher.doFinal(plaintext)
 
-            val tempEncFile = File(file.parentFile, "${file.name}.tmp")
             FileOutputStream(tempEncFile).use { fos ->
                 fos.write(iv.size)
                 fos.write(iv)
-                fos.write(ciphertext)
+                CipherOutputStream(fos, cipher).use { cos ->
+                    file.inputStream().use { input -> input.copyTo(cos) }
+                }
             }
 
-            tempEncFile.renameTo(file)
-            true
+            if (!tempEncFile.renameTo(file)) {
+                tempEncFile.delete()
+                Log.e("VaultEncryptionService", "Failed to replace ${file.name} with encrypted output")
+                false
+            } else {
+                true
+            }
         } catch (e: Exception) {
+            tempEncFile.delete()
             Log.e("VaultEncryptionService", "Failed to encrypt file ${file.name}", e)
             false
         }
     }
 
     /**
+     * Encrypts [file] unless it is already ciphertext.
+     */
+    fun encryptFileIfNeeded(file: File): Boolean = !file.exists() || isEncrypted(file) || encryptFile(file)
+
+    /**
      * Decrypts a file encrypted with [encryptFile] into memory.
+     * Used for bitmaps, which must be decoded from a byte array anyway.
      */
     fun decryptFileToBytes(file: File): ByteArray? {
         if (!file.exists() || file.length() <= IV_LENGTH + 1) return null
         return try {
             FileInputStream(file).use { fis ->
                 val ivSize = fis.read()
-                if (ivSize <= 0 || ivSize > 32) return null
+                if (ivSize <= 0 || ivSize > MAX_IV_LENGTH) return null
                 val iv = ByteArray(ivSize)
-                fis.read(iv)
-                val ciphertext = fis.readBytes()
+                if (fis.read(iv) != ivSize) return null
 
                 val cipher = Cipher.getInstance(TRANSFORMATION)
-                val spec = GCMParameterSpec(GCM_TAG_LENGTH, iv)
-                cipher.init(Cipher.DECRYPT_MODE, getSecretKey(), spec)
-                cipher.doFinal(ciphertext)
+                cipher.init(Cipher.DECRYPT_MODE, getSecretKey(), GCMParameterSpec(GCM_TAG_LENGTH, iv))
+                CipherInputStream(fis, cipher).use { it.readBytes() }
             }
         } catch (e: Exception) {
             Log.e("VaultEncryptionService", "Failed to decrypt file ${file.name}", e)
@@ -109,18 +146,50 @@ object VaultEncryptionService {
     }
 
     /**
-     * Decrypts a file in place back to plaintext.
+     * Decrypts a file in place back to plaintext. Writes to a temporary file first so a
+     * failed authentication tag never destroys the ciphertext.
      */
     fun decryptFileInPlace(file: File): Boolean {
-        val decryptedBytes = decryptFileToBytes(file) ?: return false
+        if (!file.exists() || file.length() <= IV_LENGTH + 1) return false
+        val tempPlainFile = File(file.parentFile, "${file.name}.tmp")
         return try {
-            file.writeBytes(decryptedBytes)
-            true
+            FileInputStream(file).use { fis ->
+                val ivSize = fis.read()
+                if (ivSize <= 0 || ivSize > MAX_IV_LENGTH) {
+                    Log.e("VaultEncryptionService", "Invalid IV header in ${file.name}")
+                    return false
+                }
+                val iv = ByteArray(ivSize)
+                if (fis.read(iv) != ivSize) {
+                    Log.e("VaultEncryptionService", "Truncated IV in ${file.name}")
+                    return false
+                }
+
+                val cipher = Cipher.getInstance(TRANSFORMATION)
+                cipher.init(Cipher.DECRYPT_MODE, getSecretKey(), GCMParameterSpec(GCM_TAG_LENGTH, iv))
+                FileOutputStream(tempPlainFile).use { fos ->
+                    CipherInputStream(fis, cipher).use { cis -> cis.copyTo(fos) }
+                }
+            }
+
+            if (!tempPlainFile.renameTo(file)) {
+                tempPlainFile.delete()
+                Log.e("VaultEncryptionService", "Failed to replace ${file.name} with decrypted output")
+                false
+            } else {
+                true
+            }
         } catch (e: Exception) {
-            Log.e("VaultEncryptionService", "Failed to overwrite with decrypted bytes", e)
+            tempPlainFile.delete()
+            Log.e("VaultEncryptionService", "Failed to decrypt file in place ${file.name}", e)
             false
         }
     }
+
+    /**
+     * Decrypts [file] unless it is already plaintext.
+     */
+    fun decryptFileIfNeeded(file: File): Boolean = !file.exists() || !isEncrypted(file) || decryptFileInPlace(file)
 
     /**
      * Decrypts an encrypted image file directly into a Bitmap without writing plaintext to disk.

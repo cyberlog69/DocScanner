@@ -109,12 +109,9 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         Log.i("AppDatabase", "Upgrading database from version $oldVersion to $newVersion")
         for (version in oldVersion until newVersion) {
             val migration = ALL_MIGRATIONS.find { it.fromVersion == version && it.toVersion == version + 1 }
-            if (migration != null) {
-                Log.i("AppDatabase", "Applying migration: v${migration.fromVersion} -> v${migration.toVersion}")
-                migration.migrate(db)
-            } else {
-                Log.w("AppDatabase", "No migration found from v$version to v${version + 1}")
-            }
+                ?: error("No migration registered from v$version to v${version + 1}")
+            Log.i("AppDatabase", "Applying migration: v${migration.fromVersion} -> v${migration.toVersion}")
+            migration.migrate(db)
         }
     }
 
@@ -285,6 +282,14 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
     override suspend fun getDocumentById(id: String): Document? = withContext(Dispatchers.IO) {
         val list = queryDocuments("SELECT * FROM $TABLE_DOCUMENTS WHERE id = ? LIMIT 1", arrayOf(id))
         list.firstOrNull()
+    }
+
+    override suspend fun getAllDocumentsSync(): List<Document> = withContext(Dispatchers.IO) {
+        queryDocuments("SELECT * FROM $TABLE_DOCUMENTS ORDER BY createdAt ASC", null)
+    }
+
+    override suspend fun getVaultDocumentsSync(): List<Document> = withContext(Dispatchers.IO) {
+        queryDocuments("SELECT * FROM $TABLE_DOCUMENTS WHERE isVault = 1 ORDER BY createdAt ASC", null)
     }
 
     override suspend fun renameDocument(id: String, title: String, now: Long): Unit = withContext(Dispatchers.IO) {

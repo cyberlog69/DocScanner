@@ -3,12 +3,9 @@ package com.example.docscanner.service
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.ColorMatrix
-import android.graphics.ColorMatrixColorFilter
-import android.graphics.Paint
 import android.graphics.Rect
 import com.example.docscanner.bridge.OcrRecognitionMode
+import com.example.docscanner.bridge.preprocessForHandwriting
 import com.example.docscanner.data.pref.OcrLanguage
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
@@ -22,7 +19,6 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
-import kotlin.math.abs
 
 /**
  * Offline OCR service using ML Kit Text Recognition v2 (bundled multi-language models).
@@ -49,26 +45,6 @@ class OcrService(
     }
 
     /**
-     * Enhances contrast and stroke definition to optimize detection of cursive and faint handwriting.
-     */
-    private fun preprocessForHandwriting(source: Bitmap): Bitmap {
-        val enhanced = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(enhanced)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-
-        // Increase contrast (+35%) and slightly deepen shadows to sharpen handwriting strokes
-        val colorMatrix = ColorMatrix(floatArrayOf(
-            1.35f, 0f, 0f, 0f, -15f,
-            0f, 1.35f, 0f, 0f, -15f,
-            0f, 0f, 1.35f, 0f, -15f,
-            0f, 0f, 0f, 1f, 0f
-        ))
-        paint.colorFilter = ColorMatrixColorFilter(colorMatrix)
-        canvas.drawBitmap(source, 0f, 0f, paint)
-        return enhanced
-    }
-
-    /**
      * Runs OCR on a [Bitmap] with the specified [language] and [mode], returning extracted text.
      */
     suspend fun recognizeText(
@@ -90,14 +66,11 @@ class OcrService(
                             text = block.text,
                             boundingBox = block.boundingBox,
                             lines = block.lines.map { line ->
-                                val isLikelyHandwritten = mode == OcrRecognitionMode.HANDWRITING_OPTIMIZED ||
-                                    (line.confidence in 0.35f..0.82f && abs(line.angle) > 1.2f)
                                 OcrLine(
                                     text = line.text,
                                     confidence = line.confidence,
                                     boundingBox = line.boundingBox,
-                                    angle = line.angle,
-                                    isLikelyHandwritten = isLikelyHandwritten
+                                    angle = line.angle
                                 )
                             }
                         )
@@ -161,6 +134,5 @@ data class OcrLine(
     val text: String,
     val confidence: Float,
     val boundingBox: Rect? = null,
-    val angle: Float = 0f,
-    val isLikelyHandwritten: Boolean = false
+    val angle: Float = 0f
 )

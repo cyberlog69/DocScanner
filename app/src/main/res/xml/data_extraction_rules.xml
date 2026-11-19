@@ -1,16 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
    Privacy-first backup rules for Android 12+ (API 31+).
-   Scanned documents, OCR text, thumbnails and the lock/settings preferences are
-   excluded from CLOUD backup so private files never leave the device.
-   Device-to-device transfer remains enabled so users can move scans to a new phone.
+   Scanned documents, vault contents, OCR text, thumbnails and the lock/settings
+   preferences are excluded from CLOUD backup so private files never leave the device.
+   Device-to-device transfer covers the library only: vault files are encrypted with a
+   device-bound key and could never be decrypted on the new device.
 -->
 <data-extraction-rules>
     <cloud-backup disableIfNoEncryptionCapabilities="true">
         <exclude domain="file" path="documents/"/>
+        <exclude domain="file" path="vault/"/>
         <exclude domain="file" path="thumbnails/"/>
+        <exclude domain="file" path="pages/"/>
+        <exclude domain="file" path="pdfs/"/>
         <exclude domain="database" path="."/>
-        <exclude domain="sharedpref" path="docscanner_settings.xml"/>
+        <exclude domain="sharedpref" path="."/>
     </cloud-backup>
     <device-transfer>
         <include domain="file" path="documents/"/>

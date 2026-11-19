@@ -95,7 +95,7 @@ class ScanViewModel(
                 // Run OCR on new pages using selected OCR Language (if auto OCR is enabled)
                 val newOcrResults = if (settings.autoOcr) {
                     _state.update { it.copy(processingStep = "Running AI OCR on ${bitmaps.size} pages (${settings.ocrLanguage.displayName})...") }
-                    bitmaps.map { bitmap -> ocrService.recognizeText(bitmap, settings.ocrLanguage) }
+                    bitmaps.map { bitmap -> ocrService.recognizeText(bitmap, settings.ocrLanguage, settings.ocrRecognitionMode) }
                 } else {
                     emptyList()
                 }
@@ -223,7 +223,7 @@ class ScanViewModel(
 
                 val ocrResult = if (settings.autoOcr) {
                     _state.update { it.copy(processingStep = "Running AI OCR on ID card...") }
-                    ocrService.recognizeText(compositeBitmap, settings.ocrLanguage)
+                    ocrService.recognizeText(compositeBitmap, settings.ocrLanguage, settings.ocrRecognitionMode)
                 } else null
 
                 val extractedText = ocrResult?.fullText ?: ""

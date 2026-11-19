@@ -15,6 +15,10 @@ kotlin {
         compilerOptions {
             jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
         }
+
+        // Host tests (commonTest) run on the JVM in CI instead of requiring an
+        // emulator or a macOS host.
+        withHostTestBuilder {}.configure {}
     }
 
     listOf(

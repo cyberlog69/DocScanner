@@ -2,6 +2,7 @@ package com.example.docscanner.data.pref
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.example.docscanner.bridge.OcrRecognitionMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,13 +25,8 @@ enum class ThemeMode(val displayName: String, val description: String) {
     DARK("Dark", "Always use dark theme")
 }
 
-enum class OcrLanguage(val displayName: String, val nativeName: String, val badge: String) {
-    LATIN("English / Latin", "English, Spanish, French, German, etc.", "EN/LATIN"),
-    DEVANAGARI("Hindi / Devanagari", "हिन्दी, मराठी, संस्कृत", "HI/DEV"),
-    CHINESE("Chinese", "中文 (简体 / 繁體)", "ZH/CN"),
-    JAPANESE("Japanese", "日本語 (漢字 / かな)", "JA/JP"),
-    KOREAN("Korean", "한국어 (한글)", "KO/KR")
-}
+/** Re-exported from the KMP shared module — one definition for both platforms. */
+typealias OcrLanguage = com.example.docscanner.model.OcrLanguage
 
 data class ScannerSettingsState(
     val cameraQuality: CameraQuality = CameraQuality.HIGH,
@@ -38,8 +34,9 @@ data class ScannerSettingsState(
     val autoOcr: Boolean = true,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val ocrLanguage: OcrLanguage = OcrLanguage.LATIN,
+    val ocrRecognitionMode: OcrRecognitionMode = OcrRecognitionMode.BALANCED_AUTO,
     val isBiometricLockEnabled: Boolean = false,
-    val autoCheckUpdates: Boolean = true
+    val autoCheckUpdates: Boolean = false
 )
 
 class ScannerPreferences(context: Context) {
@@ -51,6 +48,7 @@ class ScannerPreferences(context: Context) {
         private const val KEY_AUTO_OCR = "key_auto_ocr"
         private const val KEY_THEME_MODE = "key_theme_mode"
         private const val KEY_OCR_LANGUAGE = "key_ocr_language"
+        private const val KEY_OCR_RECOGNITION_MODE = "key_ocr_recognition_mode"
         private const val KEY_BIOMETRIC_LOCK = "key_biometric_lock"
         private const val KEY_AUTO_CHECK_UPDATES = "key_auto_check_updates"
     }
@@ -81,7 +79,7 @@ class ScannerPreferences(context: Context) {
     private fun loadSettings(): ScannerSettingsState {
         val autoOcr = prefs.getBoolean(KEY_AUTO_OCR, true)
         val bioLock = prefs.getBoolean(KEY_BIOMETRIC_LOCK, false)
-        val autoCheckUpdates = prefs.getBoolean(KEY_AUTO_CHECK_UPDATES, true)
+        val autoCheckUpdates = prefs.getBoolean(KEY_AUTO_CHECK_UPDATES, false)
 
         return ScannerSettingsState(
             cameraQuality = enumPreference(KEY_CAMERA_QUALITY, CameraQuality.HIGH),
@@ -89,6 +87,7 @@ class ScannerPreferences(context: Context) {
             autoOcr = autoOcr,
             themeMode = enumPreference(KEY_THEME_MODE, ThemeMode.SYSTEM),
             ocrLanguage = enumPreference(KEY_OCR_LANGUAGE, OcrLanguage.LATIN),
+            ocrRecognitionMode = enumPreference(KEY_OCR_RECOGNITION_MODE, OcrRecognitionMode.BALANCED_AUTO),
             isBiometricLockEnabled = bioLock,
             autoCheckUpdates = autoCheckUpdates
         )
@@ -117,6 +116,11 @@ class ScannerPreferences(context: Context) {
     fun setOcrLanguage(language: OcrLanguage) {
         setEnumPreference(KEY_OCR_LANGUAGE, language)
         _settings.value = _settings.value.copy(ocrLanguage = language)
+    }
+
+    fun setOcrRecognitionMode(mode: OcrRecognitionMode) {
+        setEnumPreference(KEY_OCR_RECOGNITION_MODE, mode)
+        _settings.value = _settings.value.copy(ocrRecognitionMode = mode)
     }
 
     fun setBiometricLockEnabled(enabled: Boolean) {

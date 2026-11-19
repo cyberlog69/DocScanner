@@ -14,8 +14,10 @@ local.properties
 *.ipa
 releases/
 .kotlin/
-
-# Roadmap & planning files
-[Rr][Oo][Aa][Dd][Mm][Aa][Pp]*
 .freebuff/
 
+# Signing material — never commit keystores or credentials
+*.keystore
+*.jks
+keystore.properties
+signing.properties

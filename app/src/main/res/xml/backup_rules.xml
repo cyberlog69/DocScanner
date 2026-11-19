@@ -1,12 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
    Backup rules for Android 7.0 - 11 (API 24-30).
-   Scanned documents, thumbnails, OCR database and lock preferences are excluded
-   from Auto Backup so private files stay on-device.
+   Scanned documents, vault contents, thumbnails, OCR database and lock
+   preferences are excluded from Auto Backup so private files stay on-device.
 -->
 <full-backup-content>
     <exclude domain="file" path="documents/"/>
+    <exclude domain="file" path="vault/"/>
     <exclude domain="file" path="thumbnails/"/>
+    <!-- Legacy restore output directories. -->
+    <exclude domain="file" path="pages/"/>
+    <exclude domain="file" path="pdfs/"/>
     <exclude domain="database" path="."/>
-    <exclude domain="sharedpref" path="docscanner_settings.xml"/>
+    <exclude domain="sharedpref" path="."/>
 </full-backup-content>

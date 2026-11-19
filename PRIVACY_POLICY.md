@@ -1,7 +1,7 @@
 # Privacy Policy for DocScanner
 
 **Effective Date:** September 7, 2026  
-**Last Updated:** September 7, 2026  
+**Last Updated:** November 20, 2026  
 
 DocScanner ("we", "our", or "the app") is a privacy-first, 100% on-device mobile document scanning application available for Android and iOS. Your privacy is our highest priority, and DocScanner is engineered from the ground up to operate completely offline without data collection, telemetry, or remote servers.
 
@@ -24,20 +24,23 @@ DocScanner requests only the minimum permissions necessary to deliver document s
 | **Camera (`android.permission.CAMERA`)** | Used in real time to capture physical documents, receipts, and ID cards. | Video feed and photographs are processed solely on-device. Images are stored only in your private local database or exported to your designated storage. |
 | **Storage / Media Access (`READ_EXTERNAL_STORAGE` on API ≤ 28)** | Used strictly on older Android versions to allow importing existing photos from your gallery or saving PDFs. | On Android 10+ (API 29+), DocScanner uses Android Scoped Storage and the system Photo Picker, requiring no broad storage permissions. |
 | **Biometric Hardware (`android.permission.USE_BIOMETRIC`)** | Used to authenticate you before unlocking the app or accessing the Encrypted Document Vault. | Authentication is performed entirely by Android's hardware-backed `BiometricPrompt` and Android Keystore. DocScanner never accesses or stores your biometric data (fingerprint, face recognition data, or PIN). |
+| **Install Packages (`android.permission.REQUEST_INSTALL_PACKAGES`, `github` flavor only)** | Used only to hand a downloaded update APK to the system installer after its SHA-256 digest has been verified. | The app never installs anything silently; Android always shows its own confirmation dialog. |
 
 ---
 
 ## 3. Network Access Policy
 
-- **Google Play Edition (`play` flavor):** Does **not** request or use the `android.permission.INTERNET` permission. The Google Play edition operates in complete network isolation and is technically incapable of sending data over the internet.
-- **Standalone Sideload Edition (`github` flavor):** Requests `INTERNET` solely and exclusively to check for newer app releases on GitHub and download update APK files when initiated by the user. Document content, scan text, and media are never transmitted.
+- **Google Play Edition (`play` flavor):** In-app update checking is compiled out. The app does not initiate any network requests of its own. The `INTERNET` permission still appears in the merged manifest because it is declared by the bundled Google ML Kit dependency; no document content, OCR text, or media is ever transmitted.
+- **Standalone Sideload Edition (`github` flavor):** Requests `INTERNET` solely to check for newer app releases on GitHub and download update APK files. Automatic checking is **off by default** and can be enabled in Settings; manual checks only run when you tap "Check for Updates". Document content, scan text, and media are never transmitted.
 
 ---
 
 ## 4. On-Device Encryption & Security
 
-- Documents placed in the **Encrypted Vault** are protected using **AES-256 GCM** authenticated encryption with cryptographic keys managed by the hardware-backed **Android Keystore**.
-- Unlocking the vault occurs strictly in volatile device memory and is never persisted unencrypted to permanent storage without user action.
+- Documents placed in the **Encrypted Vault** are protected using **AES-256 GCM** authenticated encryption with cryptographic keys managed by the hardware-backed **Android Keystore**. The key never leaves the device and cannot be exported.
+- Vault files are stored as ciphertext at rest. Opening the vault decrypts them on-device only while it is open; closing the vault, leaving the vault screen, or backgrounding the app re-encrypts them.
+- **Vault documents are excluded from `.zip` backups and from Android device-to-device transfer**, because the key is bound to the device and they could not be decrypted anywhere else.
+- **Android system backup:** scanned documents, thumbnails, the app database, and settings are excluded from cloud backup. Device-to-device transfer may include non-vault library documents only when you explicitly initiate it.
 
 ---
 

@@ -1,12 +1,7 @@
 package com.example.docscanner.bridge
 
 import android.content.Context
-import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.ColorMatrix
-import android.graphics.ColorMatrixColorFilter
-import android.graphics.Paint
 import android.net.Uri
 import com.example.docscanner.model.OcrLanguage
 import com.google.mlkit.vision.common.InputImage
@@ -38,26 +33,6 @@ actual class PlatformOcrEngine(private val context: Context? = null) {
                 OcrLanguage.KOREAN -> TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
             }
         }
-    }
-
-    /**
-     * Enhances contrast and stroke definition to optimize detection of cursive and faint handwriting.
-     */
-    private fun preprocessForHandwriting(source: Bitmap): Bitmap {
-        val enhanced = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(enhanced)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-
-        // Increase contrast (+35%) and slightly deepen shadows to sharpen handwriting strokes
-        val colorMatrix = ColorMatrix(floatArrayOf(
-            1.35f, 0f, 0f, 0f, -15f,
-            0f, 1.35f, 0f, 0f, -15f,
-            0f, 0f, 1.35f, 0f, -15f,
-            0f, 0f, 0f, 1f, 0f
-        ))
-        paint.colorFilter = ColorMatrixColorFilter(colorMatrix)
-        canvas.drawBitmap(source, 0f, 0f, paint)
-        return enhanced
     }
 
     actual suspend fun recognizeText(imagePath: String, language: OcrLanguage): String =
