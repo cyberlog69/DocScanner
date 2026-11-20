@@ -25,7 +25,7 @@ jobs:
       matrix:
         include:
           - language: java-kotlin
-            build-mode: autobuild
+            build-mode: manual
           - language: actions
             build-mode: none
           - language: swift
@@ -36,6 +36,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
+        if: matrix.language != 'actions'
         uses: actions/setup-java@v5
         with:
           java-version: '17'
@@ -43,6 +44,7 @@ jobs:
           cache: gradle
 
       - name: Grant execute permission for gradlew
+        if: matrix.language != 'actions'
         run: chmod +x gradlew
 
       - name: Initialize CodeQL
@@ -51,9 +53,12 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
 
-      - if: matrix.build-mode == 'autobuild'
-        name: Autobuild
-        uses: github/codeql-action/autobuild@v4
+      # CodeQL's autobuilder resolves the AGP plugin classpath through its own
+      # proxy init script and fails on this project, so the Android build is
+      # invoked directly instead.
+      - if: matrix.language == 'java-kotlin'
+        name: Build Android sources (Manual)
+        run: ./gradlew :app:assembleGithubDebug --no-daemon --stacktrace
 
       - if: matrix.language == 'swift'
         name: Build Swift Code (Manual)
