@@ -12,7 +12,10 @@ captures/
 local.properties
 *.apk
 *.ipa
-releases/
+releases/*
+!releases/*/
+releases/*/*
+!releases/*/release_notes.md
 .kotlin/
 .freebuff/
 

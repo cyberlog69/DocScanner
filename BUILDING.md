@@ -78,7 +78,40 @@ Release builds need a signing key. Provide it either through a
 | `keyPassword` | `DOCSCANNER_KEY_PASSWORD` |
 
 Without those values the release build still runs but produces an **unsigned**
-APK, which is what CI does for verification builds.
+APK. Pull-request and `main`-branch builds stay unsigned; only `v*` tag pushes
+are signed and published.
+
+### Automatic signing and publishing on tag pushes
+
+Pushing a `v*` tag runs the `Publish Signed Release` job in
+`.github/workflows/build-ios.yml`. It imports the release keystore from
+repository secrets, builds `:app:assembleGithubRelease`, verifies the APK
+signature with `apksigner`, and creates a GitHub release with the signed APK
+and `releases/<tag>/release_notes.md` as the body.
+
+Add these secrets under **Settings → Secrets and variables → Actions**:
+
+| Secret | Value |
+|---|---|
+| `DOCSCANNER_KEYSTORE_BASE64` | Base64 encoding of the keystore file |
+| `DOCSCANNER_STORE_PASSWORD` | Keystore password |
+| `DOCSCANNER_KEY_ALIAS` | Key alias (`docscanner` by default) |
+| `DOCSCANNER_KEY_PASSWORD` | Key password |
+
+```powershell
+# Windows: copy the Base64 form to the clipboard, then upload it
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("app/release.keystore")) | Set-Clipboard
+gh secret set DOCSCANNER_KEYSTORE_BASE64 --body "$(Get-Clipboard)"
+```
+
+```bash
+# macOS / Linux
+base64 -w0 app/release.keystore | gh secret set DOCSCANNER_KEYSTORE_BASE64
+```
+
+The keystore file itself must never be committed; only its Base64 form belongs
+in repository secrets. If any of the four secrets is missing the job fails
+instead of publishing an unsigned APK.
 
 > **Key rotation required**: an earlier release keystore was committed to this
 > repository and must be treated as compromised. Generate a new key with
