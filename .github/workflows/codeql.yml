@@ -56,9 +56,18 @@ jobs:
       # CodeQL's autobuilder resolves the AGP plugin classpath through its own
       # proxy init script and fails on this project, so the Android build is
       # invoked directly instead.
+      #
+      # --no-build-cache forces real compiler invocations (a cached build gives
+      # CodeQL no code to extract) and in-process Kotlin compilation keeps the
+      # compiler inside the JVM the tracer is attached to.
       - if: matrix.language == 'java-kotlin'
         name: Build Android sources (Manual)
-        run: ./gradlew :app:assembleGithubDebug --no-daemon --stacktrace
+        run: >
+          ./gradlew :app:assembleGithubDebug
+          --no-daemon --no-build-cache --no-configuration-cache
+          -Dkotlin.compiler.execution.strategy=in-process
+          -Pkotlin.compiler.execution.strategy=in-process
+          --stacktrace
 
       - if: matrix.language == 'swift'
         name: Build Swift Code (Manual)
