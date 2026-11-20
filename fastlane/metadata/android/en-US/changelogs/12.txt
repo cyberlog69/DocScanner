@@ -1,0 +1,6 @@
+- Encrypted Vault rebuilt: files decrypt only while the vault is open and re-encrypt when you close it or leave the app.
+- Vault documents excluded from backups and device transfer.
+- Update downloads verified with SHA-256 before install.
+- Backup restore now reports failed documents instead of skipping them.
+- New OCR recognition mode setting (printed, handwriting, mixed).
+- Vault moves roll back on failure instead of leaving partial encryption.
