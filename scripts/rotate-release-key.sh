@@ -13,19 +13,24 @@
 
 set -euo pipefail
 
-if [ "$#" -lt 2 ]; then
-  echo "usage: $0 <old-keystore> <old-store-password> [alias] [new-keystore] [lineage]" >&2
+if [ "$#" -lt 1 ]; then
+  echo "usage: $0 [old-keystore] <old-store-password> [alias] [new-keystore] [lineage]" >&2
   exit 1
 fi
 
-OLD_KEYSTORE="$1"
-OLD_PASSWORD="$2"
+OLD_KEYSTORE="${1:-old.keystore}"
+OLD_PASSWORD="${2:?usage: $0 [old-keystore] <old-store-password> [alias] [new-keystore] [lineage]}"
 ALIAS="${3:-docscanner}"
 NEW_KEYSTORE="${4:-app/release.keystore}"
 LINEAGE="${5:-app/release-lineage.bin}"
+OLD_KEYSTORE_GIT_REF="${OLD_KEYSTORE_GIT_REF:-c3dfc9c:app/docscanner-signing.keystore}"
 DNAME="${DNAME:-CN=DocScanner, OU=Mobile, O=DocScanner, L=Unknown, ST=Unknown, C=IN}"
 
-[ -f "$OLD_KEYSTORE" ] || { echo "Old keystore not found: $OLD_KEYSTORE" >&2; exit 1; }
+if [ ! -s "$OLD_KEYSTORE" ] || [ "$(head -c 1 "$OLD_KEYSTORE" | od -An -tx1 | tr -d ' \n')" != "30" ]; then
+  echo "Recovering the retired keystore from $OLD_KEYSTORE_GIT_REF"
+  git cat-file blob "$OLD_KEYSTORE_GIT_REF" > "$OLD_KEYSTORE"
+fi
+[ -s "$OLD_KEYSTORE" ] || { echo "Old keystore not found: $OLD_KEYSTORE" >&2; exit 1; }
 [ ! -e "$NEW_KEYSTORE" ] || { echo "$NEW_KEYSTORE already exists. Move it aside first." >&2; exit 1; }
 [ ! -e "$LINEAGE" ] || { echo "$LINEAGE already exists. Move it aside first." >&2; exit 1; }
 
@@ -33,12 +38,22 @@ SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 if [ -z "$SDK" ] && [ -f local.properties ]; then
   SDK="$(sed -n 's/^sdk\.dir=//p' local.properties | head -n 1)"
 fi
+if [ -z "$SDK" ]; then
+  for candidate in "$HOME/Library/Android/sdk" "$HOME/Android/Sdk" "/usr/local/lib/android/sdk"; do
+    if [ -d "$candidate/build-tools" ]; then SDK="$candidate"; break; fi
+  done
+fi
 [ -n "$SDK" ] || { echo "Set ANDROID_HOME or ANDROID_SDK_ROOT (or add sdk.dir to local.properties)." >&2; exit 1; }
 
-BUILD_TOOLS="$(find "$SDK/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+BUILD_TOOLS="$(find "$SDK/build-tools" -mindepth 1 -maxdepth 1 -type d -name '[0-9]*' | sort -V | tail -n 1)"
 [ -n "$BUILD_TOOLS" ] || { echo "No build-tools found under $SDK" >&2; exit 1; }
 APKSIGNER="$BUILD_TOOLS/apksigner"
-KEYTOOL="${JAVA_HOME:+$JAVA_HOME/bin/}keytool"
+if [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/keytool" ]; then
+  KEYTOOL="$JAVA_HOME/bin/keytool"
+else
+  KEYTOOL="$(command -v keytool || true)"
+  [ -n "$KEYTOOL" ] || { echo "No keytool found. Set JAVA_HOME or install a JDK." >&2; exit 1; }
+fi
 
 PASSWORD="$(LC_ALL=C tr -dc 'A-Za-z0-9_-' < /dev/urandom | head -c 32)"
 

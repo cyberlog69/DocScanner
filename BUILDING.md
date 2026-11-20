@@ -133,24 +133,25 @@ as compromised. `scripts/rotate-release-key.ps1` (Windows) and
 `scripts/rotate-release-key.sh` (macOS/Linux) generate a new 4096-bit key and the
 lineage that links it to the retired key, so existing installs keep updating.
 
-The retired keystore is still recoverable from history:
+The retired keystore is recovered from git history automatically when it is
+missing or was written by PowerShell's `>` redirection, which corrupts binary
+data. The script also locates the JDK and Android SDK on its own.
 
 ```powershell
 # Windows
-git show c3dfc9c:app/docscanner-signing.keystore > old.keystore
 powershell -ExecutionPolicy Bypass -File scripts/rotate-release-key.ps1 `
-  -OldKeystore old.keystore -OldStorePassword '<old password>'
+  -OldStorePassword '<old password>'
 ```
 
 ```bash
 # macOS / Linux
-git show c3dfc9c:app/docscanner-signing.keystore > old.keystore
 ./scripts/rotate-release-key.sh old.keystore '<old password>'
 ```
 
 The script writes `app/release.keystore`, `app/release-lineage.bin` and a
 git-ignored `keystore.properties`, then prints the `gh secret set` commands. Back
 up the keystore, the lineage and the password: losing them blocks future updates.
+Delete `old.keystore` once its secret is uploaded; that key is compromised.
 
 To rotate again later, extend the existing lineage rather than starting over:
 

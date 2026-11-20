@@ -4,15 +4,16 @@
 #   * API 28+ follows the lineage and adopts the new key.
 #   * API 24-27 verify the v2 signature made with the retired key.
 #
-# The old keystore can be recovered from history if it is no longer on disk:
-#   git show c3dfc9c:app/docscanner-signing.keystore > old.keystore
+# The retired keystore is recovered from git history when it is missing or was
+# written by PowerShell's ">" redirection (which corrupts binary data).
 #
 # Usage:
-#   pwsh -File scripts/rotate-release-key.ps1 -OldKeystore old.keystore -OldStorePassword '...'
+#   powershell -ExecutionPolicy Bypass -File scripts/rotate-release-key.ps1 -OldStorePassword '<password>'
 
 param(
-    [Parameter(Mandatory = $true)][string]$OldKeystore,
     [Parameter(Mandatory = $true)][string]$OldStorePassword,
+    [string]$OldKeystore = "old.keystore",
+    [string]$OldKeystoreGitRef = "c3dfc9c:app/docscanner-signing.keystore",
     [string]$Alias = "docscanner",
     [string]$NewKeystore = "app/release.keystore",
     [string]$LineagePath = "app/release-lineage.bin",
@@ -21,30 +22,105 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-if (-not (Test-Path $OldKeystore)) { throw "Old keystore not found: $OldKeystore" }
-if (Test-Path $NewKeystore) { throw "$NewKeystore already exists. Move it aside first." }
-if (Test-Path $LineagePath) { throw "$LineagePath already exists. Move it aside first." }
-
-$sdk = $env:ANDROID_HOME
-if (-not $sdk) { $sdk = $env:ANDROID_SDK_ROOT }
-if (-not $sdk -and (Test-Path "local.properties")) {
-    $match = Select-String -Path "local.properties" -Pattern '^sdk\.dir=' | Select-Object -First 1
-    if ($match) { $sdk = $match.Line -replace '^sdk\.dir=', '' }
+function Find-JavaHome {
+    $candidates = @()
+    if ($env:JAVA_HOME) { $candidates += $env:JAVA_HOME }
+    $candidates += @(
+        (Join-Path $env:ProgramFiles "Android\Android Studio\jbr"),
+        (Join-Path $env:LOCALAPPDATA "Programs\Android Studio\jbr"),
+        (Join-Path $env:LOCALAPPDATA "Programs\Android Studio1\jbr")
+    )
+    $jdks = Join-Path $env:USERPROFILE ".jdks"
+    if (Test-Path $jdks) {
+        $candidates += Get-ChildItem $jdks -Directory |
+            Sort-Object { $_.Name } -Descending |
+            ForEach-Object { $_.FullName }
+    }
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path (Join-Path $candidate "bin\keytool.exe"))) { return $candidate }
+    }
+    $command = Get-Command keytool -ErrorAction SilentlyContinue
+    if ($command) { return (Split-Path -Parent (Split-Path -Parent $command.Source)) }
+    return $null
 }
-if (-not $sdk) { throw "Set ANDROID_HOME or ANDROID_SDK_ROOT (or add sdk.dir to local.properties)." }
+
+function Find-AndroidSdk {
+    $candidates = @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT)
+    if (Test-Path "local.properties") {
+        $match = Select-String -Path "local.properties" -Pattern '^sdk\.dir=' | Select-Object -First 1
+        if ($match) { $candidates += ($match.Line -replace '^sdk\.dir=', '') }
+    }
+    $candidates += @(
+        (Join-Path $env:LOCALAPPDATA "Android\Sdk"),
+        (Join-Path $env:USERPROFILE "AppData\Local\Android\Sdk")
+    )
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path (Join-Path $candidate "build-tools"))) { return $candidate }
+    }
+    return $null
+}
+
+# PKCS12/JKS keystores are binary; a valid one starts with an ASN.1 SEQUENCE.
+function Test-Keystore([string]$Path) {
+    if (-not (Test-Path $Path)) { return $false }
+    try {
+        $stream = [System.IO.File]::OpenRead($Path)
+        try { $first = $stream.ReadByte() } finally { $stream.Close() }
+        return ($first -eq 0x30)
+    } catch {
+        return $false
+    }
+}
+
+# Writes the exact git blob bytes; PowerShell's ">" would re-encode them as UTF-16.
+function Restore-KeystoreFromGit([string]$GitRef, [string]$Destination) {
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = "git"
+    $startInfo.Arguments = "cat-file blob $GitRef"
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.UseShellExecute = $false
+    $process = [System.Diagnostics.Process]::Start($startInfo)
+    try {
+        $output = $process.StandardOutput.BaseStream
+        $file = [System.IO.File]::Create($Destination)
+        try { $output.CopyTo($file) } finally { $file.Close() }
+    } finally {
+        $process.WaitForExit()
+    }
+    if ($process.ExitCode -ne 0) { throw "git cat-file failed for $GitRef" }
+}
+
+$javaHome = Find-JavaHome
+if (-not $javaHome) {
+    throw "No JDK found. Set JAVA_HOME or install one under $env:USERPROFILE\.jdks."
+}
+$env:JAVA_HOME = $javaHome
+$keytool = Join-Path $javaHome "bin\keytool.exe"
+
+$sdk = Find-AndroidSdk
+if (-not $sdk) {
+    throw "Android SDK not found. Set ANDROID_HOME or add sdk.dir to local.properties."
+}
 
 $buildTools = Get-ChildItem (Join-Path $sdk "build-tools") -Directory |
-    Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+    Where-Object { $_.Name -match '^\d+(\.\d+){1,3}$' } |
+    Sort-Object { [version]$_.Name } -Descending |
+    Select-Object -First 1
 if (-not $buildTools) { throw "No build-tools found under $sdk" }
 
 $apksigner = Join-Path $buildTools.FullName "apksigner.bat"
 if (-not (Test-Path $apksigner)) { $apksigner = Join-Path $buildTools.FullName "apksigner" }
 
-$keytool = "keytool"
-if ($env:JAVA_HOME) {
-    $candidate = Join-Path $env:JAVA_HOME "bin/keytool.exe"
-    if (Test-Path $candidate) { $keytool = $candidate }
+if (-not (Test-Keystore $OldKeystore)) {
+    Write-Host "Recovering the retired keystore from $OldKeystoreGitRef"
+    Restore-KeystoreFromGit $OldKeystoreGitRef $OldKeystore
+    if (-not (Test-Keystore $OldKeystore)) {
+        throw "$OldKeystore is not a valid keystore after recovery from $OldKeystoreGitRef"
+    }
 }
+
+if (Test-Path $NewKeystore) { throw "$NewKeystore already exists. Move it aside first." }
+if (Test-Path $LineagePath) { throw "$LineagePath already exists. Move it aside first." }
 
 $bytes = New-Object byte[] 24
 [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
@@ -83,6 +159,7 @@ Write-Host "Lineage:      $LineagePath"
 Write-Host "Password:     $newPassword"
 Write-Host ""
 Write-Host "Back up the keystore, the lineage and the password. Losing them blocks future updates."
+Write-Host "Delete $OldKeystore once its secret is uploaded; that key is compromised."
 Write-Host ""
 Write-Host "Upload the signing secrets:"
 Write-Host "  [Convert]::ToBase64String([IO.File]::ReadAllBytes('$newKeystoreFull')) | gh secret set DOCSCANNER_KEYSTORE_BASE64"
