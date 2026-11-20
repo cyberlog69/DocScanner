@@ -34,7 +34,7 @@ jobs:
 
       - name: Upload test reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: unit-test-reports
           path: |
@@ -62,7 +62,7 @@ jobs:
         run: ./gradlew assembleGithubDebug --stacktrace
 
       - name: Upload Android APK Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: docscanner-android-apk
           path: app/build/outputs/apk/github/debug/app-github-debug.apk
@@ -146,13 +146,13 @@ jobs:
           zip -r DocScanner.ipa Payload
 
       - name: Upload iOS Framework Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: DocScannerKit-iOS-Framework
           path: shared/build/bin/iosArm64/releaseFramework/
 
       - name: Upload iOS .ipa Sideload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: DocScanner-iOS-IPA
           path: build/ios/DocScanner.ipa
