@@ -163,6 +163,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      KEY_ALIAS: ${{ secrets.DOCSCANNER_KEY_ALIAS }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -178,44 +180,95 @@ jobs:
         run: chmod +x gradlew
 
       # Fails rather than publishing an unsigned APK when a secret is missing.
-      - name: Import release keystore
+      - name: Import signing material
         env:
-          KEYSTORE_BASE64: ${{ secrets.DOCSCANNER_KEYSTORE_BASE64 }}
-          STORE_PASSWORD: ${{ secrets.DOCSCANNER_STORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.DOCSCANNER_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.DOCSCANNER_KEY_PASSWORD }}
+          NEW_KEYSTORE: ${{ secrets.DOCSCANNER_KEYSTORE_BASE64 }}
+          OLD_KEYSTORE: ${{ secrets.DOCSCANNER_OLD_KEYSTORE_BASE64 }}
+          LINEAGE: ${{ secrets.DOCSCANNER_LINEAGE_BASE64 }}
+          NEW_STORE_PASSWORD: ${{ secrets.DOCSCANNER_STORE_PASSWORD }}
+          NEW_KEY_PASSWORD: ${{ secrets.DOCSCANNER_KEY_PASSWORD }}
+          OLD_PASSWORD: ${{ secrets.DOCSCANNER_OLD_STORE_PASSWORD }}
         run: |
-          for name in KEYSTORE_BASE64 STORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+          for name in NEW_KEYSTORE OLD_KEYSTORE LINEAGE NEW_STORE_PASSWORD NEW_KEY_PASSWORD OLD_PASSWORD KEY_ALIAS; do
             if [ -z "${!name}" ]; then
-              echo "::error::Missing repository secret DOCSCANNER_$name"
+              echo "::error::Missing repository secret for signing ($name)"
               exit 1
             fi
           done
-          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
-          chmod 600 "$RUNNER_TEMP/release.keystore"
+          mkdir -p "$RUNNER_TEMP/signing"
+          printf '%s' "$NEW_KEYSTORE" | base64 -d > "$RUNNER_TEMP/signing/new.keystore"
+          printf '%s' "$OLD_KEYSTORE" | base64 -d > "$RUNNER_TEMP/signing/old.keystore"
+          printf '%s' "$LINEAGE" | base64 -d > "$RUNNER_TEMP/signing/lineage.bin"
+          chmod 600 "$RUNNER_TEMP"/signing/*
 
-      - name: Build signed release APK
-        env:
-          DOCSCANNER_KEYSTORE: ${{ runner.temp }}/release.keystore
-          DOCSCANNER_STORE_PASSWORD: ${{ secrets.DOCSCANNER_STORE_PASSWORD }}
-          DOCSCANNER_KEY_ALIAS: ${{ secrets.DOCSCANNER_KEY_ALIAS }}
-          DOCSCANNER_KEY_PASSWORD: ${{ secrets.DOCSCANNER_KEY_PASSWORD }}
+      # Built unsigned on purpose: Gradle cannot attach a v3 rotation lineage,
+      # so signing happens with apksigner after the APK is assembled.
+      - name: Build unsigned release APK
         run: ./gradlew :app:assembleGithubRelease --stacktrace
 
-      - name: Verify APK signature
+      - name: Sign APK with rotation lineage
+        id: sign
+        env:
+          NEW_STORE_PASSWORD: ${{ secrets.DOCSCANNER_STORE_PASSWORD }}
+          NEW_KEY_PASSWORD: ${{ secrets.DOCSCANNER_KEY_PASSWORD }}
+          OLD_PASSWORD: ${{ secrets.DOCSCANNER_OLD_STORE_PASSWORD }}
         run: |
-          APK=$(find app/build/outputs/apk/github/release -name '*.apk' -print -quit)
+          set -euo pipefail
           SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
-          APKSIGNER=$(find "$SDK/build-tools" -name apksigner -type f | sort -V | tail -n 1)
-          "$APKSIGNER" verify --print-certs "$APK"
-          cp "$APK" "DocScanner-Android-${GITHUB_REF_NAME}.apk"
+          BUILD_TOOLS=$(find "$SDK/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+          SIGNING="$RUNNER_TEMP/signing"
+
+          UNSIGNED=$(find app/build/outputs/apk/github/release -name '*unsigned*.apk' -print -quit)
+          if [ -z "$UNSIGNED" ]; then
+            echo "::error::No unsigned release APK produced"
+            exit 1
+          fi
+
+          OUT_DIR="$RUNNER_TEMP/release"
+          mkdir -p "$OUT_DIR"
+          ALIGNED="$OUT_DIR/aligned.apk"
+          SIGNED="$OUT_DIR/DocScanner-Android-${GITHUB_REF_NAME}.apk"
+
+          "$BUILD_TOOLS/zipalign" -p -f 4 "$UNSIGNED" "$ALIGNED"
+
+          # Old signer first so API 24-27 verify v2 against the retired key;
+          # the new signer plus --lineage is the v3 rotation proof for API 28+.
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$SIGNING/old.keystore" --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass env:OLD_PASSWORD --key-pass env:OLD_PASSWORD \
+            --next-signer \
+            --ks "$SIGNING/new.keystore" --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass env:NEW_STORE_PASSWORD --key-pass env:NEW_KEY_PASSWORD \
+            --lineage "$SIGNING/lineage.bin" --rotation-min-sdk-version 28 \
+            --out "$SIGNED" "$ALIGNED"
+
+          echo "apk=$SIGNED" >> "$GITHUB_OUTPUT"
+          ls -lh "$SIGNED"
+
+      # Fails the job if the APK is unsigned, signed with the wrong key, or
+      # missing the lineage that lets existing installs update in place.
+      - name: Verify signature and lineage
+        env:
+          APK: ${{ steps.sign.outputs.apk }}
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          BUILD_TOOLS=$(find "$SDK/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+
+          "$BUILD_TOOLS/apksigner" verify --print-certs "$APK"
+          "$BUILD_TOOLS/apksigner" lineage --in "$APK" --print-certs
+          # API 24-27 do not read the v3 block, so they must verify via v2.
+          "$BUILD_TOOLS/apksigner" verify --min-sdk-version 24 --max-sdk-version 27 "$APK"
 
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          APK: ${{ steps.sign.outputs.apk }}
         run: |
-          NOTES="releases/${GITHUB_REF_NAME}/release_notes.md"
+          set -euo pipefail
           ASSET="DocScanner-Android-${GITHUB_REF_NAME}.apk"
+          cp "$APK" "$ASSET"
+          NOTES="releases/${GITHUB_REF_NAME}/release_notes.md"
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" "$ASSET" --clobber
           elif [ -f "$NOTES" ]; then

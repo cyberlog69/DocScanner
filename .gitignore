@@ -22,5 +22,7 @@ releases/*/*
 # Signing material — never commit keystores or credentials
 *.keystore
 *.jks
+*.lineage
+app/release-lineage.bin
 keystore.properties
 signing.properties

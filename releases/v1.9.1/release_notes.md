@@ -51,14 +51,19 @@ OCR, and PDF generation fully on-device.
 
 ---
 
-### Signing key change — action required for existing sideload users
+### Signing key change
 
-The previous release key was exposed and has been retired. Builds from v1.9.1
-onward are signed with a new key, so **Android will refuse to install this update
-over an older build**. Export anything you need, uninstall the old app, then install
-v1.9.1. Uninstalling removes documents stored inside the app.
+The previous release key was exposed and has been retired. This release is signed
+with a new key, and it also carries an APK Signature Scheme v3 rotation lineage:
 
-Store installs are unaffected by the key change.
+- **Android 9 and newer** follow the lineage and adopt the new key.
+- **Android 7.0-8.1** verify the v2 signature made with the retired key, which
+  still matches earlier installs.
+
+Either way the update installs in place, with no uninstall required. Devices that
+install this release stop trusting APKs signed only with the exposed key, except
+on Android 7.0-8.1, which keep accepting the retired key until the minimum
+supported version is raised to Android 9.
 
 ---
 

@@ -84,22 +84,35 @@ are signed and published.
 ### Automatic signing and publishing on tag pushes
 
 Pushing a `v*` tag runs the `Publish Signed Release` job in
-`.github/workflows/build-ios.yml`. It imports the release keystore from
-repository secrets, builds `:app:assembleGithubRelease`, verifies the APK
-signature with `apksigner`, and creates a GitHub release with the signed APK
-and `releases/<tag>/release_notes.md` as the body.
+`.github/workflows/build-ios.yml`. It builds an **unsigned** APK, page-aligns it,
+then signs with both the retired and the current key plus a v3
+`SigningCertificateLineage`, verifies the result, and publishes the GitHub
+release with `releases/<tag>/release_notes.md` as the body. Gradle cannot attach
+a lineage, which is why signing happens with `apksigner` after assembly.
+
+Dual signing is what lets existing users update in place after a key change:
+
+- **Android 9+ (API 28+)** follows the v3 lineage and adopts the new key.
+- **Android 7.0-8.1 (API 24-27)** ignore the v3 block and verify the v2 signature
+  made with the retired key, which still matches apps installed before the
+  rotation.
 
 Add these secrets under **Settings → Secrets and variables → Actions**:
 
 | Secret | Value |
 |---|---|
-| `DOCSCANNER_KEYSTORE_BASE64` | Base64 encoding of the keystore file |
-| `DOCSCANNER_STORE_PASSWORD` | Keystore password |
-| `DOCSCANNER_KEY_ALIAS` | Key alias (`docscanner` by default) |
-| `DOCSCANNER_KEY_PASSWORD` | Key password |
+| `DOCSCANNER_KEYSTORE_BASE64` | Base64 of the current keystore |
+| `DOCSCANNER_STORE_PASSWORD` | Current keystore password |
+| `DOCSCANNER_KEY_PASSWORD` | Current key password |
+| `DOCSCANNER_KEY_ALIAS` | Key alias (`docscanner`) |
+| `DOCSCANNER_OLD_KEYSTORE_BASE64` | Base64 of the retired keystore |
+| `DOCSCANNER_OLD_STORE_PASSWORD` | Retired keystore password |
+| `DOCSCANNER_LINEAGE_BASE64` | Base64 of the generated `lineage.bin` |
+
+`scripts/rotate-release-key.ps1` prints all of these commands after it runs:
 
 ```powershell
-# Windows: copy the Base64 form to the clipboard, then upload it
+# Windows
 [Convert]::ToBase64String([IO.File]::ReadAllBytes("app/release.keystore")) | Set-Clipboard
 gh secret set DOCSCANNER_KEYSTORE_BASE64 --body "$(Get-Clipboard)"
 ```
@@ -109,17 +122,56 @@ gh secret set DOCSCANNER_KEYSTORE_BASE64 --body "$(Get-Clipboard)"
 base64 -w0 app/release.keystore | gh secret set DOCSCANNER_KEYSTORE_BASE64
 ```
 
-The keystore file itself must never be committed; only its Base64 form belongs
-in repository secrets. If any of the four secrets is missing the job fails
-instead of publishing an unsigned APK.
+The keystores and the lineage must never be committed; only their Base64 forms
+belong in repository secrets. If any secret is missing the job fails instead of
+publishing an unsigned APK.
 
-> **Key rotation required**: an earlier release keystore was committed to this
-> repository and must be treated as compromised. Generate a new key with
-> `scripts/generate-release-keystore.ps1` (Windows) or
-> `scripts/generate-release-keystore.sh` (macOS/Linux), store the keystore and
-> password outside the repo, and keep the old key only to sign migration builds
-> if you need to keep existing installs updatable. Users on the old key cannot
-> install a build signed with the new one without uninstalling first.
+### Rotating the release key
+
+An earlier release keystore was committed to this repository and must be treated
+as compromised. `scripts/rotate-release-key.ps1` (Windows) and
+`scripts/rotate-release-key.sh` (macOS/Linux) generate a new 4096-bit key and the
+lineage that links it to the retired key, so existing installs keep updating.
+
+The retired keystore is still recoverable from history:
+
+```powershell
+# Windows
+git show c3dfc9c:app/docscanner-signing.keystore > old.keystore
+powershell -ExecutionPolicy Bypass -File scripts/rotate-release-key.ps1 `
+  -OldKeystore old.keystore -OldStorePassword '<old password>'
+```
+
+```bash
+# macOS / Linux
+git show c3dfc9c:app/docscanner-signing.keystore > old.keystore
+./scripts/rotate-release-key.sh old.keystore '<old password>'
+```
+
+The script writes `app/release.keystore`, `app/release-lineage.bin` and a
+git-ignored `keystore.properties`, then prints the `gh secret set` commands. Back
+up the keystore, the lineage and the password: losing them blocks future updates.
+
+To rotate again later, extend the existing lineage rather than starting over:
+
+```bash
+apksigner rotate --out lineage-next.bin --in lineage.bin \
+  --old-signer --ks current.keystore --ks-key-alias docscanner \
+  --new-signer --ks next.keystore --ks-key-alias docscanner
+```
+
+Keep signing releases with the **oldest** key first (for API 24-27) and the
+**newest** key second (for API 28+), passing the extended lineage.
+
+> **Residual risk on old devices**: because the retired private key is public,
+> anyone can still sign an APK that API 24-27 devices would accept as an update.
+> Modern devices are protected once they install a lineage-bearing release.
+> Raise `minSdk` to 28 to drop the retired key entirely.
+
+### Building a release locally
+
+Local builds sign with the current key only (no lineage), so the APK installs
+cleanly but is not update-compatible with official builds.
 
 - **Linux / macOS**:
   ```bash
