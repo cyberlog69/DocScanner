@@ -3,7 +3,7 @@
 SwiftUI sources for the iOS app. They currently implement scanning, OCR text
 recognition, and PDF export natively in Swift; they do **not** import the KMP
 shared framework yet (`SettingsView.swift` only contains a commented-out
-`import`). Closing that gap is tracked in [ROADMAP.md](../ROADMAP.md).
+`import`).
 
 ## ⚠️ Requirements: macOS + Xcode 16+
 

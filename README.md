@@ -85,7 +85,6 @@ DocScanner
 **Platform status:** Android is the primary target and carries the full feature set
 (vault, backup/restore, PDF annotation, signatures, folders, tags, batch tools).
 The iOS app covers scanning, OCR, and PDF export, and is not yet at feature parity.
-See [ROADMAP.md](ROADMAP.md) for the parity work still outstanding.
 
 ---
 

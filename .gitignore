@@ -19,6 +19,9 @@ releases/*/*
 .kotlin/
 .freebuff/
 
+# Local-only planning notes — kept out of the published repository
+ROADMAP.md
+
 # Signing material — never commit keystores or credentials
 *.keystore
 *.jks
