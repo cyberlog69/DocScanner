@@ -110,14 +110,14 @@ The iOS app covers scanning, OCR, and PDF export, and is not yet at feature pari
 Download pre-built packages from the [GitHub Releases](https://github.com/cyberlog69/DocScanner/releases) section:
 
 ### 🤖 Android (`.apk`)
-- **`DocScanner-Android-v1.9.0.apk`**: Full standalone package with bundled offline ML Kit models.
+- **`DocScanner-Android-v1.9.1.apk`**: Full standalone package with bundled offline ML Kit models.
 - **Install via ADB**:
   ```powershell
-  adb install -r DocScanner-Android-v1.9.0.apk
+  adb install -r DocScanner-Android-v1.9.1.apk
   ```
 
 ### 🍏 iOS (`.ipa` & Framework)
-- **`DocScanner-iOS-v1.9.0.ipa`**: Unsigned package ready for sideloading on physical iOS devices (iOS 16.0+) via **AltStore**, **Sideloadly**, or **Xcode Devices & Simulators**, which sign it on install.
+- **`DocScanner-iOS-v1.9.1.ipa`**: Unsigned package ready for sideloading on physical iOS devices (iOS 16.0+) via **AltStore**, **Sideloadly**, or **Xcode Devices & Simulators**, which sign it on install.
 - **`DocScannerKit.framework`**: Compiled multiplatform binary framework for Xcode projects.
 
 ---
