@@ -70,6 +70,14 @@ class DocumentListViewModel(
     private val _isBannerDismissed = MutableStateFlow(false)
     val isBannerDismissed: StateFlow<Boolean> = _isBannerDismissed.asStateFlow()
 
+    // Declared before init: viewModelScope dispatches on Main.immediate, so the
+    // vault collector below runs synchronously during construction.
+    private val _isVaultMode = MutableStateFlow(false)
+    val isVaultMode: StateFlow<Boolean> = _isVaultMode.asStateFlow()
+
+    private val _vaultMessage = MutableStateFlow<String?>(null)
+    val vaultMessage: StateFlow<String?> = _vaultMessage.asStateFlow()
+
     init {
         if (BuildConfig.ENABLE_GITHUB_UPDATER && preferences.settings.value.autoCheckUpdates) {
             checkForUpdates(BuildConfig.VERSION_NAME, isManual = false)
@@ -160,12 +168,6 @@ private data class DocumentFilter(
 
     private val _selectedFolderId = MutableStateFlow<String?>(null)
     val selectedFolderId: StateFlow<String?> = _selectedFolderId.asStateFlow()
-
-    private val _isVaultMode = MutableStateFlow(false)
-    val isVaultMode: StateFlow<Boolean> = _isVaultMode.asStateFlow()
-
-    private val _vaultMessage = MutableStateFlow<String?>(null)
-    val vaultMessage: StateFlow<String?> = _vaultMessage.asStateFlow()
 
     val folders: StateFlow<List<Folder>> = repository.getAllFolders()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())

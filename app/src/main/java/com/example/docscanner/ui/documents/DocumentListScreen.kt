@@ -115,6 +115,7 @@ import com.example.docscanner.model.SortOrder
 import com.example.docscanner.data.pref.ScannerPreferences
 import com.example.docscanner.service.BackupRestoreService
 import com.example.docscanner.service.BiometricAuthManager
+import com.example.docscanner.service.BiometricAuthResult
 import com.example.docscanner.service.FileStorageService
 import com.example.docscanner.ui.components.DocScannerBrandLogo
 import com.example.docscanner.ui.components.UpdateAvailableDialog
@@ -628,9 +629,12 @@ fun DocumentListScreen(
                                     ) { result ->
                                         if (result.isSuccess) {
                                             viewModel.setVaultMode(true)
-                                        } else {
+                                        } else if (result !is BiometricAuthResult.Canceled) {
                                             scope.launch {
-                                                snackbarHostState.showSnackbar("Vault authentication failed")
+                                                snackbarHostState.showSnackbar(
+                                                    (result as? BiometricAuthResult.Error)?.message
+                                                        ?: "Vault authentication failed"
+                                                )
                                             }
                                         }
                                     }
