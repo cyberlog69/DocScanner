@@ -18,6 +18,9 @@ OCR, and PDF generation fully on-device.
   any failure, so a half-encrypted document is never left behind.
 - **Existing vault documents are migrated** to the new location the first time you
   unlock the vault.
+- **Unlock works on more devices.** Devices that use a PIN/pattern without
+  enrolled biometrics, and devices with Class 2 face unlock, could previously
+  fail to open the vault.
 - **Streaming crypto.** Encryption and in-place decryption stream through the
   cipher, so large PDFs no longer spike memory.
 
